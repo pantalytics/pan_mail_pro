@@ -448,15 +448,16 @@ class PanMailMailbox(models.Model):
     # Mail that starts something new from a mail client has no obvious home
     # (the contact? a lead? an opportunity?) and the module is not in a position
     # to guess. `_gate_wanted` is where each rung is enforced.
+    #
+    # The labels are what a screen reader hears on the slider and what the
+    # mailbox list's Sync column shows (#419). There is no `help`: the
+    # widget's intro above the slider says what the level is about, on screen.
     sync_level = fields.Selection([
         ('replies', 'Replies'),
-        ('both', 'Replies and Sent Items'),
-        ('contacts', 'Replies, Sent Items and known contacts'),
-        ('everyone', 'Replies, Sent Items, known and new contacts'),
-    ], string='Sync level', default='replies', required=True,
-        help='How much of this mailbox Odoo reads back. Replies to mail Odoo '
-             'sent always land on their record; each level adds one more kind '
-             'of mail on top of that.')
+        ('both', 'Received and sent replies'),
+        ('contacts', 'Replies and existing contacts'),
+        ('everyone', 'Replies, existing and new contacts'),
+    ], string='Sync level', default='replies', required=True)
 
     route_to_team = fields.Boolean(
         string='To Team',

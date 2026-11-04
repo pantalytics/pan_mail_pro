@@ -53,16 +53,16 @@ That mailbox is pre-selected in the composer. You can still change it per email.
 
 ## Choose how much of your mailbox Odoo reads
 
-Replies to mail Odoo sent always land on their record, whatever you pick. The
+Replies in a conversation that is already in Odoo always come in, whatever you pick. The
 **Sync level** slider on **My Preferences → Mail Pro** decides what is read on top of
 that, for your own address:
 
-| Sync level | What is read back |
+| Sync level | What comes into Odoo |
 |---|---|
-| Replies | your contact's replies, and nothing from your mail app |
-| Replies and Sent Items | also the replies you send from Outlook or Gmail |
-| Replies, Sent Items and known contacts | also new conversations with people who are already contacts |
-| Replies, Sent Items, known and new contacts | also new conversations from new contacts, who become contacts |
+| Replies | replies in conversations that are already in Odoo, and nothing from your mail app |
+| Received and sent replies | also the replies you send from Outlook or Gmail |
+| Replies and existing contacts | also new conversations from people who are already contacts |
+| Replies, existing and new contacts | also new conversations from new contacts, whom Mail Pro adds as contacts |
 
 It is your setting, not an administrator's: nobody else can change it, and you
 can move up or down at any time. Shared mailboxes are configured by an

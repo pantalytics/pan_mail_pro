@@ -1345,19 +1345,27 @@ answers, and each keeps strictly more than the one above it:
 | `sync_level` | Stop | Label | Adds |
 |---|---|---|---|
 | `replies` | Replies | Replies | nothing; the inbox is read for replies and that is all |
-| `both` | + Sent Items | Replies and Sent Items | the Sent folder, for the owner's own replies to threads Odoo already has |
-| `contacts` | + known contacts | Replies, Sent Items and known contacts | conversations started by a known contact |
-| `everyone` | + new contacts | Replies, Sent Items, known and new contacts | conversations started by a new contact, who becomes one |
+| `both` | + sent replies | Received and sent replies | the Sent folder, for the owner's own replies to threads Odoo already has |
+| `contacts` | + existing contacts | Replies and existing contacts | conversations started by an existing contact |
+| `everyone` | + new contacts | Replies, existing and new contacts | conversations started by a new contact, who becomes one |
 
 The control is a slider with four stops (`static/src/js/sync_level_field.js`,
-the `mailpro_sync_level` field widget), and under it one grid shows what lands
-where: four rows (Replies, Sent Items, New mail from a known contact, New mail
-from a new contact) against two columns, Your mail app and Odoo record. The mail
-app has every row at every stop; each stop turns on exactly one more row in the
-Odoo column, which is what makes it a ladder rather than a menu. Each row's info
-dot unfolds one muted line on what it means. The grid is a claim about the
-gates, so `tests/test_sync_level_slider.py` holds the widget's rows to
-`_reads_sent_folder`, `_syncs_new_conversations` and `_syncs_strangers`.
+the `mailpro_sync_level` field widget). Above it one line says what Mail Pro
+does (it links each conversation to one record, a contact being one) and that
+the mail app keeps every email; it is the field's explanation, so the field has
+no `help`. Under it one grid shows which emails reach Odoo (#419): five rows in
+two groups, Receiving (Replies, New conversation from an existing contact, New
+conversation from a new contact) and Sending (Replies from your mail app, New
+conversation from your mail app), against one In Odoo column that follows the
+slider. Replies are in at every stop, a new conversation started in the mail
+app at none, and each stop above the first turns on exactly one more row, which
+is what makes it a ladder rather than a menu. Each row's info dot unfolds one
+muted line on which record Mail Pro links the conversation to; one line under
+the grid names what no stop lets in (internal domains, Block Email Sync). The
+grid is a claim about the gates, so `tests/test_sync_level_slider.py` holds the
+widget's rows to `_reads_sent_folder`, `_syncs_new_conversations` and
+`_syncs_strangers`, and the sent row that is never in to `_gate_wanted`'s
+refusal in `tests/test_incoming_gates.py`.
 
 #257 removed an earlier five-row table under the radio as repeating the labels.
 It did not: the labels say which rung, only the picture says where the mail
@@ -2933,7 +2941,7 @@ borrowed from another module, because CI runs community and cannot see this.
 ### 9.15 The mailbox form asks nothing
 
 There was a test email on the mailbox form, and a Check step around it, until
-19.0.35.0.0 (#420). The form asks nobody to verify anything now: the access
+19.0.36.0.0 (#420). The form asks nobody to verify anything now: the access
 check runs on its own (§2 *Verified access*), and a send that fails carries its
 own reason in `failure_reason`, saying what to do at the moment it matters.
 
