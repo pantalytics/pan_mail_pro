@@ -20,8 +20,10 @@ seeds it. Every assertion here is a bug this module has actually shipped:
     <the Odoo.sh host>") beside the arrow, two routes to one step, and the
     first one left the provider form stuck on "Not Connected" (#382)
   * a staging copy showed outgoing mail and said nothing about it (#379)
-  * onboarding had no end: four done steps and the first mail on a record
-    now fold into "Mail Pro is up and running", with confetti once (#391)
+  * onboarding had no end: the done steps now fold into "Mail Pro is up and
+    running", with confetti once (#391); five of them, configuration only (#415)
+  * step 1 said "Connected" where the other rows name a fact; it names the
+    Pantalytics workspace now, and a long name stays on one line (#418)
 
     tools/ui_check.py                     # assert, and write screenshots
     tools/ui_check.py --out=ui-screenshots
@@ -154,11 +156,11 @@ class Checks:
         self.shot('settings-mail-pro.png')
 
         steps = page.query_selector_all('.o_mailpro_step')
-        if len(steps) != 4:
-            self.fail(f'the checklist has {len(steps)} steps, expected 4')
+        if len(steps) != 5:
+            self.fail(f'the checklist has {len(steps)} steps, expected 5')
         names = [s.query_selector('.o_mailpro_step_name').inner_text().strip() for s in steps]
         if names != ['1. Pantalytics account', '2. Email provider',
-                     '3. Internal domains', '4. Mailboxes']:
+                     '3. Internal domains', '4. Mailboxes', '5. Notification mailbox']:
             self.fail(f'the steps read {names}')
 
         for index, step in enumerate(steps, start=1):
@@ -187,7 +189,9 @@ class Checks:
             self.fail('About does not carry the copyright line')
 
         # Step 1, connected: one word, and nothing of the not-connected or
-        # pending states leaking onto the screen. Who connected, usage and
+        # pending states leaking onto the screen. The seed's answer names no
+        # workspace, so this is the fallback (#418); the name is
+        # `settings_workspace_name`'s. Who connected, usage and
         # billing and the way out moved to the account page behind the arrow.
         head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
         if head != '1. Pantalytics account Connected':
@@ -233,6 +237,11 @@ class Checks:
                       if v.is_visible()]
             if not any(re.fullmatch(rf'\d+ {noun}(s|es)?', v) for v in values):
                 self.fail(f'the {noun}s line reads {values}, not a count')
+        # Step 5 answers with the one address that sends Odoo's own email.
+        values = [' '.join(v.inner_text().split())
+                  for v in steps[4].query_selector_all('.o_mailpro_step_value') if v.is_visible()]
+        if len(values) != 1 or '@' not in values[0]:
+            self.fail(f'the notification mailbox line reads {values}, not its address')
 
         self.rows_only_report(steps, 'a connected database')
 
@@ -243,19 +252,63 @@ class Checks:
 
         # Last, because it leaves the settings page.
         self.settings_account(steps[0])
+        self.settings_workspace_name()
+
+    def settings_workspace_name(self):
+        """Step 1 names the Pantalytics workspace the signed answer names
+        (#418), and a name too long for the line is cut with an ellipsis,
+        never wrapped. Written onto the link the way the mail-limit check
+        writes its answer, and taken away again after."""
+        page = self.page
+        link = self.call('pan.mail.license', 'search', [])
+        long_name = 'Acme Logistics and Distribution Services ' * 6
+
+        def step_1(name):
+            self.call('pan.mail.license', 'write', link,
+                      {'entitlement_json': json.dumps({'workspace_name': name})})
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step', timeout=30000)
+            page.wait_for_timeout(800)
+            return page.query_selector_all('.o_mailpro_step')[0]
+
+        try:
+            step = step_1('Acme')
+            self.shot('settings-workspace-name.png')
+            head = ' '.join(step.query_selector('.o_mailpro_step_head').inner_text().split())
+            if head != '1. Pantalytics account Acme':
+                self.fail(f'step 1 with a workspace name reads "{head}"')
+
+            step = step_1(long_name)
+            self.shot('settings-workspace-name-long.png')
+            value = next((v for v in step.query_selector_all('.o_mailpro_step_value')
+                          if v.is_visible()), None)
+            name = step.query_selector('.o_mailpro_step_name')
+            if not value:
+                self.fail('step 1 with a long workspace name shows no answer')
+            elif value.bounding_box()['height'] > name.bounding_box()['height'] * 1.5:
+                self.fail('a long workspace name wraps on step 1 instead of being cut')
+            elif not value.evaluate('e => e.scrollWidth > e.clientWidth'):
+                self.fail('a long workspace name is not cut with an ellipsis on step 1')
+            width = step.bounding_box()['width']
+            if width > MAX_STEP_WIDTH:
+                self.fail(f'a long workspace name widens step 1 to {width:.0f}px')
+            self.error_free('Settings with a workspace name')
+        finally:
+            self.call('pan.mail.license', 'write', link, {'entitlement_json': False})
 
     # -- The end of onboarding (#391) ----------------------------------------
 
     def up_and_running(self):
-        """Four steps done and an incoming mail on a record: the checklist
-        folds into "Mail Pro is up and running", confetti flies once per
-        database and never on a reload, Show setup unfolds the four green
-        steps, and the one next action opens the colleagues who have not
+        """Five steps done (#415): the checklist folds into "Mail Pro is
+        up and running", confetti flies once per database and never on a
+        reload, Show setup unfolds the five green steps, and the one next action opens the colleagues who have not
         connected a mailbox, with Take the tour beside it, which opens the
         Inbox on its tour. The seed is mid-setup on purpose (an own Azure
         app, two stopped mailboxes, a personal notification mailbox), so the
         walk stands the green in for itself and puts the seed back after.
-        Its mail on a lead is the mail on a record.
+        No mail has to have arrived: the checklist is configuration only.
         """
         page = self.page
         call = self.call
@@ -372,8 +425,8 @@ class Checks:
                 page.wait_for_timeout(500)
                 steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
                 self.shot('settings-up-and-running-setup.png')
-                if len(steps) != 4:
-                    self.fail(f'Show setup shows {len(steps)} steps, expected 4')
+                if len(steps) != 5:
+                    self.fail(f'Show setup shows {len(steps)} steps, expected 5')
                 for index, step in enumerate(steps, start=1):
                     dots = [d.get_attribute('class') for d in step.query_selector_all('.o_mailpro_dot')
                             if d.is_visible()]
@@ -383,8 +436,8 @@ class Checks:
                     self.fail(f'the open checklist\'s button reads "{toggle.inner_text().strip()}"')
                 self.rows_only_report(steps, 'up and running, unfolded')
 
-            # Step 4 amber, a personal mailbox carrying the system email
-            # (#387): still up and running, with step 4's own line under the
+            # Step 5 amber, a personal mailbox carrying the system email
+            # (#387): still up and running, with step 5's own line under the
             # headline, which opens Mailboxes.
             call('pan.mail.mailbox', 'write', [carrier['id']], {'is_notification_mailbox': True})
             open_settings()
@@ -667,7 +720,7 @@ class Checks:
     def settings_mail_limit(self):
         """Over the month's included mails with no card on the workspace:
         step 1 says so and offers one primary button, Add a card, and steps
-        2 to 4 stay, because the connection works and only incoming waits.
+        2 to 5 stay, because the connection works and only incoming waits.
         The answer is stood in for on the row, the way the seed stands in a
         connected one; the signature is the test file's (test_mail_limit.py).
         """
@@ -687,9 +740,9 @@ class Checks:
             self.shot('settings-mail-limit.png')
 
             steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
-            if len(steps) != 4:
+            if len(steps) != 5:
                 self.fail(f'over the mail limit the page shows {len(steps)} setup steps, '
-                          f'expected all 4: only incoming waits')
+                          f'expected all 5: only incoming waits')
                 return
             head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
             if head != '1. Pantalytics account Incoming paused':
@@ -4122,8 +4175,8 @@ class Checks:
             page.wait_for_timeout(800)
             steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
             self.shot('settings-no-provider.png')
-            if len(steps) != 4:
-                self.fail(f'with no provider the page shows {len(steps)} steps, expected 4')
+            if len(steps) != 5:
+                self.fail(f'with no provider the page shows {len(steps)} steps, expected 5')
                 return
             self.rows_only_report(steps, 'with no provider')
             if 'Use Microsoft 365' in steps[1].inner_text():
@@ -4390,13 +4443,13 @@ class Checks:
             page.unroute('**/accounts.google.com/**')
             self.call('pan.mail.provider', 'write', [row_id], {'provider': was})
 
-    def step4_personal_notification(self):
-        """A personal mailbox carrying the system email (#387): step 4 amber
+    def step5_personal_notification(self):
+        """A personal mailbox carrying the system email (#387): step 5 amber
         with one line, the Mailboxes list it opens offering to create a
         shared mailbox at Microsoft (no Show me while that slot is empty),
         the mailbox's own Sync settings still there, and green again once a
         shared mailbox carries the flag. The seed's two stopped mailboxes are
-        set going for the walk, or step 4 would be the red of broken."""
+        set going for the walk, so the page is the one a working setup sees."""
         page = self.page
         mailboxes = self.call('pan.mail.mailbox', 'search_read', [],
                               fields=['email', 'state', 'is_notification_mailbox',
@@ -4410,13 +4463,13 @@ class Checks:
         stopped = [m['id'] for m in mailboxes if m['state'] == 'error']
         self.call('pan.mail.mailbox', 'write', stopped, {'state': 'active'})
 
-        def step_4():
+        def step_5():
             page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
             page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
             page.click('a.tab[data-key=pan_mail_pro]')
-            page.wait_for_selector('.o_mailpro_step_mailboxes', timeout=30000)
+            page.wait_for_selector('.o_mailpro_step_notification', timeout=30000)
             page.wait_for_timeout(800)
-            step = page.query_selector('.o_mailpro_step_mailboxes')
+            step = page.query_selector('.o_mailpro_step_notification')
             dots = [d.get_attribute('class') for d in step.query_selector_all('.o_mailpro_dot')
                     if d.is_visible()]
             msgs = [' '.join(m.inner_text().split())
@@ -4424,12 +4477,12 @@ class Checks:
             return step, dots, msgs
 
         try:
-            step, dots, msgs = step_4()
-            self.shot('settings-step4-personal.png')
+            step, dots, msgs = step_5()
+            self.shot('settings-step5-personal.png')
             if len(dots) != 1 or 'o_mailpro_dot_attention' not in dots[0]:
-                self.fail(f'step 4 with a personal notification mailbox shows {dots}, not amber')
+                self.fail(f'step 5 with a personal notification mailbox shows {dots}, not amber')
             if 'System email from a personal mailbox' not in msgs:
-                self.fail(f'step 4 with a personal notification mailbox reads {msgs}')
+                self.fail(f'step 5 with a personal notification mailbox reads {msgs}')
             self.click_row(step)
             page.wait_for_selector('.o_list_view', timeout=30000)
             page.wait_for_timeout(1200)
@@ -4452,11 +4505,11 @@ class Checks:
 
             self.call('pan.mail.mailbox', 'write', [shared['id']],
                       {'is_notification_mailbox': True})
-            step, dots, msgs = step_4()
+            step, dots, msgs = step_5()
             if any('o_mailpro_dot_attention' in d for d in dots):
-                self.fail('step 4 stays amber once a shared mailbox carries the system email')
+                self.fail('step 5 stays amber once a shared mailbox carries the system email')
             if 'System email from a personal mailbox' in msgs:
-                self.fail('step 4 still says personal once a shared mailbox carries it')
+                self.fail('step 5 still says personal once a shared mailbox carries it')
             page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
             page.wait_for_selector('.o_list_view', timeout=30000)
             page.wait_for_timeout(1000)
@@ -5777,7 +5830,7 @@ def main():
         checks.settings_provider_first()
         checks.provider_disconnect()
         checks.provider_sign_in_lands_on_settings()
-        checks.step4_personal_notification()
+        checks.step5_personal_notification()
         checks.domain_suggestion()
         checks.mailbox_status()
         checks.sync_slider()

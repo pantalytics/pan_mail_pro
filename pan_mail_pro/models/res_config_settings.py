@@ -1,17 +1,23 @@
 # -*- coding: utf-8 -*-
 """The setup page.
 
-Four steps in a fixed order, each of which reports whether the *next* one can
+Five steps in a fixed order, each of which reports whether the *next* one can
 succeed — not whether somebody filled in a field. A notification mailbox
 whose owner's token expired is not a done step.
 
 Step 1 is the Pantalytics account (`pan_mail_license.py`): nothing below it
 exists until it is answered, because every step after it configures a product
 that will not run, and a checklist you cannot finish reads as the thing that
-is broken. Steps 2 to 4, and the rule that turns them into a phase, live in
-`pan_mail_setup.py`; this file is the checklist in front of them.
+is broken. Steps 2 to 5, and the rule that turns three of them into a phase,
+live in `pan_mail_setup.py`; this file is the checklist in front of them.
 
-Steps 2 to 4 are tables — providers, internal domains, mailboxes — so this
+The checklist is configuration only (#415): it reads the same whether you set
+it up today or come back in a year. Step 4 is a mailbox that works, step 5
+the one that sends Odoo's own email. The first mail on a record is not a
+step; the Pantalytics app walks the person to it once the heartbeat says
+`setup.done`.
+
+Steps 2 to 5 are tables — providers, internal domains, mailboxes — so this
 page only shows the answer and a way to reach the table where it is actually
 edited. Nothing is typed here, and nothing is done here either: a row is a
 dot, a name, one line and its answer, and the whole row opens the page where
@@ -19,7 +25,8 @@ the action is (one route, #369 and #382). Step 1 is the exception only while
 it has no page to open: not connected, waiting for approval, or a key that
 died, where its answer is a button because the thing it edits is a pairing
 with our server, not a row. Once it is connected it is a line like the other
-three — "Connected" and an arrow — and who connected it, the plan, usage and
+four: the Pantalytics workspace's name and an arrow, or "Connected" when the
+answer names no workspace (#418). Who connected it, the plan, usage and
 billing, Check again and Disconnect are on the account page the arrow opens
 (`pan.mail.license.action_open`).
 
@@ -102,11 +109,13 @@ class ResConfigSettings(models.TransientModel):
     x_internal_domains_summary = fields.Char(compute='_compute_internal_domains_status')
 
     # -------------------------------------------------------------------------
-    # Step 4 — the mailboxes. Done when one of them is ticked as the
-    # notification mailbox and can send; the answer is how many there are,
-    # and which one sends Odoo's own mail is a column of the list.
+    # Step 4, the mailboxes. Done when one of them works (`pan.mail.setup.
+    # _mailboxes_dot`); the answer is how many there are.
+    # Step 5, the notification mailbox, the one Odoo's own email goes out
+    # from. Done when one is ticked and can send; the answer is its address.
     # -------------------------------------------------------------------------
     x_mailboxes_summary = fields.Char(compute='_compute_setup_status')
+    x_notification_mailbox_email = fields.Char(compute='_compute_setup_status')
 
     # -------------------------------------------------------------------------
     # Checklist state
@@ -118,7 +127,7 @@ class ResConfigSettings(models.TransientModel):
     x_setup_notification_done = fields.Boolean(compute='_compute_setup_status')
     # Whether the notification mailbox's owner has been *seen* to read and
     # send from it (`pan.mail.setup.notification_mailbox_verified`). The dot
-    # on step 4 reads this; the phase reads the credentials answer above.
+    # on step 5 reads this; the phase reads the credentials answer above.
     x_notification_access_state = fields.Selection(
         [('ok', 'Verified'), ('open', 'Not yet'), ('broken', 'Refused')],
         compute='_compute_setup_status')
@@ -127,7 +136,7 @@ class ResConfigSettings(models.TransientModel):
     # says it is, the owner rule until it has), read off the row (#387). Not
     # `mailbox_type`: the sending policy makes every notification mailbox
     # personal.
-    # Personal is amber on step 4: password resets and follower mail go out
+    # Personal is amber on step 5: password resets and follower mail go out
     # from a person's address, and their replies land in that person's inbox.
     # A shared mailbox carrying the flag turns it green.
     x_notification_mailbox_type = fields.Selection(
@@ -151,10 +160,14 @@ class ResConfigSettings(models.TransientModel):
     x_license_last_error = fields.Char(compute='_compute_license')
     x_license_sync_blocked = fields.Boolean(compute='_compute_license')
     # Connected, and the month's included mails are used with no card on the
-    # workspace: step 1 stays done (steps 2 to 4 keep working, sending too)
+    # workspace: step 1 stays done (steps 2 to 5 keep working, sending too)
     # and says what to do. pan_mail_license.incoming_paused().
     x_license_mail_paused = fields.Boolean(compute='_compute_license')
     x_license_mail_paused_msg = fields.Char(compute='_compute_license')
+    # The Pantalytics workspace this Odoo is connected to, as the signed
+    # answer names it (`pan.mail.license.workspace_name`, #418): step 1's
+    # answer while it is done. Empty reads "Connected", as before.
+    x_license_workspace_name = fields.Char(compute='_compute_license')
 
     # Help improve Mail Pro, as the Pantalytics workspace decided it. This
     # page can only say no: the yes lives where the contract was signed.
@@ -172,17 +185,17 @@ class ResConfigSettings(models.TransientModel):
     )
 
     # -------------------------------------------------------------------------
-    # The four dots, and the line that replaces them (#391). The colour of
-    # each dot is decided once, in `pan.mail.setup.step_dots`; the view draws
-    # the word and "up and running" asks whether all four are green.
+    # The five dots, and the line that replaces them (#391, #415). The colour
+    # of each dot is decided once, in `pan.mail.setup.step_dots`; the view
+    # draws the word and "up and running" asks whether all five are done.
     # -------------------------------------------------------------------------
     x_account_dot = fields.Selection(DOTS, compute='_compute_step_dots')
     x_provider_dot = fields.Selection(DOTS, compute='_compute_step_dots')
     x_domains_dot = fields.Selection(DOTS, compute='_compute_step_dots')
     x_mailboxes_dot = fields.Selection(DOTS, compute='_compute_step_dots')
-    # All four green and the first incoming mail on a record: the checklist
-    # folds into one line, "Mail Pro is up and running", with Show setup
-    # under it.
+    x_notification_dot = fields.Selection(DOTS, compute='_compute_step_dots')
+    # All five done: the checklist folds into one line, "Mail Pro is up and
+    # running", with Show setup under it.
     x_up_and_running = fields.Boolean(compute='_compute_step_dots')
     # The internal users with no mailbox connected yet: the one next action
     # is offered only while there is somebody to invite.
@@ -204,6 +217,7 @@ class ResConfigSettings(models.TransientModel):
             record.x_provider_dot = dots['provider']
             record.x_domains_dot = dots['domains']
             record.x_mailboxes_dot = dots['mailboxes']
+            record.x_notification_dot = dots['notification']
             record.x_up_and_running = running
             record.x_unconnected_count = unconnected
 
@@ -275,9 +289,11 @@ class ResConfigSettings(models.TransientModel):
         blocked = not self.env['pan.mail.license'].sync_allowed()
         paused = state == 'connected' and not blocked and link.incoming_paused()
         paused_msg = link.incoming_paused_message() if paused else False
+        workspace = link.workspace_name() if link else ''
         for record in self:
             record.x_license_mail_paused = paused
             record.x_license_mail_paused_msg = paused_msg
+            record.x_license_workspace_name = workspace or False
             record.x_license_sync_blocked = blocked
             record.x_license_state = state
             record.x_setup_account_done = state == 'connected' and not blocked
@@ -358,7 +374,8 @@ class ResConfigSettings(models.TransientModel):
         alert = Setup.mailbox_alert()
         answers = Setup.answers()
         access_state, access_msg = Setup.notification_mailbox_verified()
-        notification_type = self.env['mail.mail']._notification_mailbox().provider_type or False
+        notification = self.env['mail.mail']._notification_mailbox()
+        notification_type = notification.provider_type or False
         active_provider = self.env['pan.mail.provider'].current()
         mailboxes = _counted(self.env['pan.mail.mailbox'].sudo().search_count([]),
                              _('1 mailbox'), _('%s mailboxes'))
@@ -387,4 +404,5 @@ class ResConfigSettings(models.TransientModel):
             record.x_notification_access_msg = access_msg
             record.x_notification_mailbox_type = notification_type
             record.x_mailboxes_summary = mailboxes
+            record.x_notification_mailbox_email = notification.email or False
             record.x_mailboxes_alert = alert

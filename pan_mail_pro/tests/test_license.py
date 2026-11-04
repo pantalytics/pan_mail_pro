@@ -198,6 +198,46 @@ class TestLicense(TransactionCase):
         self.assertEqual(action['res_id'], link.id)
         self.assertEqual(action['view_mode'], 'form')
 
+    # --- step 1 names the workspace (#418) -----------------------------------
+
+    def connected_to(self, **entitlement):
+        return self.connected(heartbeat=_response(
+            200, self.signed(self.entitlement(**entitlement))))
+
+    def test_step_1_names_the_workspace_the_answer_names(self):
+        link = self.connected_to(workspace_name='Acme')
+        self.assertEqual(link.workspace_name(), 'Acme')
+        self.assertEqual(
+            self.env['res.config.settings'].create({}).x_license_workspace_name, 'Acme')
+
+    def test_an_answer_without_a_name_reads_connected(self):
+        """An older platform sends no name: the line says Connected, as before."""
+        link = self.connected()
+        self.assertEqual(link.workspace_name(), '')
+        self.assertFalse(self.env['res.config.settings'].create({}).x_license_workspace_name)
+
+    def test_a_name_that_is_not_a_string_reads_connected(self):
+        link = self.connected_to(workspace_name=42)
+        self.assertEqual(link.workspace_name(), '', 'a number, as signed')
+        self.assertFalse(self.env['res.config.settings'].create({}).x_license_workspace_name)
+        for value in (['Acme'], {'name': 'Acme'}, None, '', '   '):
+            link.entitlement_json = json.dumps({'workspace_name': value})
+            self.assertEqual(link.workspace_name(), '', f'{value!r}')
+        link.entitlement_json = '{not json'
+        self.assertEqual(link.workspace_name(), '')
+        link.entitlement_json = '["Acme"]'
+        self.assertEqual(link.workspace_name(), '')
+
+    def test_a_long_name_is_cut_where_it_is_read(self):
+        link = self.connected_to(workspace_name='A' * 400)
+        self.assertEqual(link.workspace_name(), 'A' * 255)
+
+    def test_disconnect_forgets_the_workspace_name(self):
+        link = self.connected_to(workspace_name='Acme')
+        link.action_disconnect()
+        self.assertEqual(link.workspace_name(), '')
+        self.assertFalse(self.env['res.config.settings'].create({}).x_license_workspace_name)
+
     def test_disconnecting_from_the_account_page_returns_to_settings(self):
         """The row left behind has nothing on it; the Connect button is on
         the settings page, so that is where Disconnect lands."""
@@ -446,15 +486,33 @@ class TestLicense(TransactionCase):
         self.assertIsInstance(body['corrections'], int)
         self.assertNotIn('Offerte', json.dumps(body))
 
-    def test_the_heartbeat_carries_the_three_setup_answers(self):
-        """Three booleans, the same three the settings checklist draws: the
-        Get started line at Pantalytics ticks what is done here rather than
-        asking the customer to say it twice."""
+    def test_the_heartbeat_carries_the_setup_answers_and_done(self):
+        """Four booleans: the phase's three, which older platform builds
+        still read, and `done`, the one the platform reads now (#415): the
+        five steps of the settings checklist done, so Pantalytics can tell a
+        paired Odoo from one that is set up."""
         self.connected()
         setup = self.calls[-1]['json']['setup']
-        self.assertEqual(set(setup), {'provider', 'domains', 'mailboxes'})
+        self.assertEqual(set(setup), {'provider', 'domains', 'mailboxes', 'done'})
         for answer in setup.values():
             self.assertIsInstance(answer, bool)
+        self.assertEqual(setup['done'], self.env['pan.mail.setup'].up_and_running())
+
+    def test_setup_done_finishing_pushes_a_heartbeat(self):
+        """`done` is in the signature, so the checklist finishing is a change
+        the fetch cron reports within the minute, the way a step is."""
+        Setup = type(self.env['pan.mail.setup'])
+        with patch.object(Setup, 'up_and_running', return_value=False):
+            link = self.connected()
+            self.assertIs(self.calls[-1]['json']['setup']['done'], False)
+        before = len(self.calls)
+        link.last_check = fields.Datetime.now() - timedelta(minutes=5)
+        with patch(POST, side_effect=self.server()), \
+                patch.object(Setup, 'up_and_running', return_value=True):
+            self.License._report_setup_if_changed()
+        self.assertEqual(len(self.calls), before + 1)
+        self.assertIs(self.calls[-1]['json']['setup']['done'], True)
+        self.assertIn('done', link.setup_reported.split(','))
 
     def test_a_setup_step_answered_reports_in_without_waiting_for_a_day(self):
         """The line is read while somebody is still walking it, so the fetch

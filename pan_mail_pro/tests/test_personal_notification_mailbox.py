@@ -7,8 +7,8 @@ things followed from that on 3 Nov. Its owner could no longer set sync on
 their own address, because the flag hid the Sync settings page; and nothing
 said that password resets now went out from a person's inbox. The flag no
 longer hides or skips anything (the mailbox syncs whatever its level says),
-and step 4 is amber, read off the mailbox's own type, until a shared
-mailbox carries the flag.
+and step 5 is amber (step 4 until #415), read off the mailbox's own type,
+until a shared mailbox carries the flag.
 """
 from datetime import timedelta
 
@@ -68,7 +68,7 @@ class TestPersonalNotificationMailbox(MailProTestCase):
         self.assertEqual(self.settings().x_notification_mailbox_type, 'personal')
         self.assertFalse(self.env['pan.mail.mailbox'].shared_mailbox_hint()['url'])
 
-    def test_the_step_4_row_says_so_in_one_line(self):
+    def test_the_step_5_row_says_so_in_one_line(self):
         arch = self.env['res.config.settings'].get_view(
             self.env.ref('pan_mail_pro.res_config_settings_view_form').id, 'form')['arch']
         self.assertIn('System email from a personal mailbox', arch)

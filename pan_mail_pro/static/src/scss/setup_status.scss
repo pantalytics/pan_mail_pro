@@ -199,7 +199,7 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
     color: $mailpro-attention-text;
 }
 
-// The end of onboarding (#391): one line where the four steps were, in the
+// The end of onboarding (#391): one line where the five steps were, in the
 // same rounded group, with the rocket the platform's install screen ends on
 // (odoo-mcp-pro-admin #595) in place of the dots.
 $mailpro-accent: if($mailpro-dark, #9b99ff, #7b78e6);

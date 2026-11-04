@@ -23,8 +23,8 @@ user. Grant the rights to that one.
 
 Since 19.0.28 Mail Pro asks the provider what a configured address is and
 whether the sign-in that serves it may read it, once an hour and at every
-sign-in. What it found is the sentence on the mailbox form and on step 4 of
-Settings → Mail Pro; the table behind it is **Settings → Technical → Email →
+sign-in. What it found is the sentence on the mailbox form and on steps 4
+and 5 of Settings → Mail Pro; the table behind it is **Settings → Technical → Email →
 Mail Pro → Mailbox access**, one line per sign-in and mailbox.
 
 | The sentence says | What it means | What to do |

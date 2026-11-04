@@ -13,7 +13,8 @@ Three things have to be true:
 3. domains    — which domains are ours, so colleagues can be told from
                 customers (there is no opt-out; see ARCHITECTURE.md §9.12)
 4. mailboxes  — one mailbox ticked as the one system mail goes out from, and
-                able to send
+                able to send (on the settings page that is step 5, the
+                notification mailbox; see "The dots" below)
 
 They are numbered from 2 because step 1 on the settings page is the
 Pantalytics account, and that one is not in this tuple on purpose: it is a
@@ -74,6 +75,12 @@ STEPS = (
     ('domains', 'Internal domains'),
     ('mailboxes', 'A notification mailbox'),
 )
+
+# Where each of the three sits on the settings page, which has five steps
+# (#415): step 4 there is "a mailbox that works", a dot and not a gate, so
+# the notification mailbox is step 5. The banner names the page's number.
+PAGE_NUMBER = {'provider': 2, 'domains': 3, 'mailboxes': 5}
+PAGE_STEPS = 5
 
 
 class PanMailSetup(models.AbstractModel):
@@ -143,7 +150,7 @@ class PanMailSetup(models.AbstractModel):
     def notification_mailbox_verified(self):
         """Has the owner's sign-in been seen to read *and* send from it?
 
-        What the checklist's dot on step 4 reads (`pan.mail.mailbox.access`).
+        What the checklist's dot on step 5 reads (`pan.mail.mailbox.access`).
         Returns ('ok' | 'open' | 'broken', sentence): `ok` when both answers
         are yes, `broken` with the provider's sentence when either is no,
         `open` with what is still to happen otherwise -- "not yet sent from"
@@ -178,13 +185,13 @@ class PanMailSetup(models.AbstractModel):
         """The first unanswered step as (index, code, label), or None.
 
         The index is the number on the settings page, where the Pantalytics
-        account is step 1, so the first step here is 2.
+        account is step 1, so the first step here is 2 (`PAGE_NUMBER`).
         """
         if answers is None:
             answers = self.answers()
-        for index, (code, label) in enumerate(STEPS, start=ACCOUNT_STEP + 1):
+        for code, label in STEPS:
             if not answers.get(code):
-                return index, code, label
+                return PAGE_NUMBER[code], code, label
         return None
 
     @api.model
@@ -205,13 +212,13 @@ class PanMailSetup(models.AbstractModel):
             return ''
         index, _code, label = blocking
         return _('Step %(index)s of %(total)s — %(label)s',
-                 index=index, total=ACCOUNT_STEP + len(STEPS), label=label)
+                 index=index, total=PAGE_STEPS, label=label)
 
     # -------------------------------------------------------------------------
     # Answers proposed instead of asked
     # -------------------------------------------------------------------------
     #
-    # Steps 3 and 4 are questions the first sign-in already answers: the domain
+    # Steps 3 and 5 are questions the first sign-in already answers: the domain
     # the provider just verified is the company's, and the mailbox the admin
     # just connected can send. Proposed, never imposed: both only fill an empty
     # answer, and both are one Change away on the settings page
@@ -271,7 +278,7 @@ class PanMailSetup(models.AbstractModel):
     def mailbox_alert(self):
         """One sentence when a mailbox has stopped, or '' when none has.
 
-        Not a phase and not a fourth step: mail still flows, one mailbox has
+        Not a phase and not a step of its own: mail still flows, one mailbox has
         stopped. It hangs off the mailboxes line of the checklist, which is the
         line that would otherwise show a green check while something is red.
         """
@@ -302,16 +309,21 @@ class PanMailSetup(models.AbstractModel):
     # -------------------------------------------------------------------------
     #
     # What each step's dot on the settings page shows, decided here once: the
-    # view draws the word, `up_and_running` asks whether all four are `ok`, so
-    # the line that says "up and running" cannot disagree with the four dots
+    # view draws the word, `up_and_running` asks whether all five are done, so
+    # the line that says "up and running" cannot disagree with the five dots
     # it replaces.
+    #
+    # Five dots, not the phase's three answers (#415): the checklist is
+    # configuration only. Step 4 is "a mailbox that works", step 5 "which one
+    # sends Odoo's own email". The phase still reads `answers()`, whose
+    # `mailboxes` is step 5's question, so sync starts when it always did.
 
     @api.model
     def step_dots(self):
         """One word per step: `ok`, `attention` (amber), `warn` (red) or `todo`.
 
-        Keyed `account`, `provider`, `domains`, `mailboxes`, in the order the
-        page numbers them. Each rule is the one the settings page used to spell
+        Keyed `account`, `provider`, `domains`, `mailboxes`, `notification`,
+        in the order the page numbers them. Each rule is the one the settings page used to spell
         out in `invisible` expressions, and the docstrings of
         `res_config_settings.py` say why each colour is that colour.
         """
@@ -320,6 +332,7 @@ class PanMailSetup(models.AbstractModel):
             'provider': self._provider_dot(),
             'domains': 'ok' if self.env['pan.mail.domain'].is_configured() else 'todo',
             'mailboxes': self._mailboxes_dot(),
+            'notification': self._notification_dot(),
         }
 
     @api.model
@@ -350,11 +363,25 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def _mailboxes_dot(self):
-        """Step 4: red when a mailbox stopped or the provider refused, amber
-        while a personal mailbox carries the system email (#387), green once
-        the owner's sign-in was seen to read and send from a shared one."""
+        """Step 4: red when a mailbox stopped or the provider refused it,
+        green once one mailbox works: not archived, not stopped, and holding
+        credentials that reach its provider (`_has_working_credentials`).
+        A mailbox that has not synced yet counts; one that stopped does not."""
+        if self.mailbox_alert():
+            return 'warn'
+        mailboxes = self.env['pan.mail.mailbox'].sudo().search([('state', '!=', 'error')])
+        if any(mailbox._has_working_credentials() for mailbox in mailboxes):
+            return 'ok'
+        return 'todo'
+
+    @api.model
+    def _notification_dot(self):
+        """Step 5: red when the provider refused the owner's sign-in on the
+        notification mailbox, amber while a personal mailbox carries the
+        system email (#387), green once the owner's sign-in was seen to read
+        and send from a shared one."""
         access, _sentence = self.notification_mailbox_verified()
-        if self.mailbox_alert() or access == 'broken':
+        if access == 'broken':
             return 'warn'
         if not self.notification_mailbox_usable():
             return 'todo'
@@ -363,36 +390,22 @@ class PanMailSetup(models.AbstractModel):
         return 'ok' if access == 'ok' else 'todo'
 
     @api.model
-    def first_mail_on_record(self):
-        """Has an incoming mail landed on a record that is not a contact?
-
-        The platform's station 4 (docs/plans/onboarding-flow.md), read the
-        way link coverage reads "linked to a document" (ARCHITECTURE.md §7):
-        a `mail.message` Mail Pro received, on a model other than a contact.
-        Off the messages rather than the routing log, because the log is
-        cleaned after 90 days and a mail linked by hand is on a record too.
-        """
-        domain = [('x_direction', '=', 'incoming')] + \
-            self.env['pan.mail.coverage']._linked_domain()
-        return bool(self.env['mail.message'].sudo().search(domain, limit=1))
-
-    @api.model
     def up_and_running(self, dots=None):
-        """Four steps done and the first mail on a record (#391).
+        """The five steps done (#391, #415).
 
-        Done is green, and for step 4 amber too: a personal mailbox carrying
+        Done is green, and for step 5 amber too: a personal mailbox carrying
         the system email works, and a shared one is a recommendation, not a
         failure (#387). The line says so under its headline. Red or the open
-        dot blocks. Green step 4 alone is not the end: a mailbox that can
-        send has not yet shown that mail arrives where it belongs. Not sticky
-        either: a step that turns red later opens the checklist again,
-        because that is where the red dot is.
+        dot blocks. It does not wait for the first mail any more: that is an
+        onboarding moment, and the Pantalytics app walks the person to it once
+        the heartbeat says `setup.done` (`pan.mail.license._setup_report`).
+        Not sticky either: a step that turns red later opens the checklist
+        again, because that is where the red dot is.
         """
         if dots is None:
             dots = self.step_dots()
-        done = all(dot == 'ok' or (step, dot) == ('mailboxes', 'attention')
+        return all(dot == 'ok' or (step, dot) == ('notification', 'attention')
                    for step, dot in dots.items())
-        return done and self.first_mail_on_record()
 
     @api.model
     def celebrate_once(self):

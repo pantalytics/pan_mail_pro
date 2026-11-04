@@ -21,6 +21,7 @@
                     <field name="x_provider_dot" invisible="1"/>
                     <field name="x_domains_dot" invisible="1"/>
                     <field name="x_mailboxes_dot" invisible="1"/>
+                    <field name="x_notification_dot" invisible="1"/>
                     <field name="x_up_and_running" invisible="1"/>
 
                     <!-- The checklist sits in Odoo's own settings container so
@@ -29,17 +30,20 @@
                          window and the arrow ended up a screen away from the
                          name it belongs to.
 
-                         Four steps, in one shape: a coloured dot on the left,
+                         Five steps, in one shape: a coloured dot on the left,
                          the name, the answer, and the way to the place you
-                         change it. Steps 2 to 4 are tables, so that way is a
+                         change it. Configuration only (#415): the first mail
+                         is not a step, the Pantalytics app walks the person
+                         to it. Steps 2 to 5 are tables, so that way is a
                          link to the table — nothing is typed on this page,
                          and nothing is done on it either: no button or link
                          on a row that has an arrow, and the whole row is the
                          way in (one route, #369 and #382).
                          Step 1 is a pairing with our server, so while it is
                          open its way is a button on the line itself; once it
-                         is connected the line reads "Connected" and its arrow
-                         opens the account page like the other three. An
+                         is connected the line names the Pantalytics workspace
+                         and its arrow opens the account page like the other
+                         four. An
                          answer is one word or one number, never a list.
                          Anything longer than an answer — a warning, a fix —
                          goes on its own line under the name, never beside it,
@@ -53,9 +57,9 @@
                     <div class="col-12 o_setting_box o_mailpro_copy_marker" role="status" invisible="not x_is_copy">
                         This is a copy. Mail is shown, not sent.
                     </div>
-                    <!-- The end of the line (#391): all four dots green
-                         and the first incoming mail on a record. The four
-                         steps fold under one line and its one next action,
+                    <!-- The end of the line (#391, #415): all five dots
+                         done, an amber step 5 included. The five steps fold
+                         under one line and its one next action,
                          and Show setup unfolds them again; the widget holds
                          that fold, so it is a click and never a change to
                          save. Confetti once per database. -->
@@ -80,10 +84,16 @@
                                 <span class="o_mailpro_step_name">1. Pantalytics account</span>
                                 <span class="o_mailpro_step_value" invisible="x_license_state != 'not_connected'">Not connected</span>
                                 <span class="o_mailpro_step_value" invisible="x_license_state != 'pending'">Waiting for approval</span>
-                                <!-- One word while the link holds. When it
-                                     broke, the dot is red and the word is what
+                                <!-- The workspace's name while the link holds
+                                     (#418), "Connected" when the answer names
+                                     none. A long name is cut with an
+                                     ellipsis, never wrapped. When it broke,
+                                     the dot is red and the word is what
                                      broke: Payment failed, Revoked. -->
-                                <span class="o_mailpro_step_value" invisible="not x_setup_account_done or x_license_mail_paused">Connected</span>
+                                <span class="o_mailpro_step_value" invisible="not x_setup_account_done or x_license_mail_paused or not x_license_workspace_name">
+                                    <field name="x_license_workspace_name" nolabel="1" readonly="1" class="d-inline"/>
+                                </span>
+                                <span class="o_mailpro_step_value" invisible="not x_setup_account_done or x_license_mail_paused or x_license_workspace_name">Connected</span>
                                 <span class="o_mailpro_step_value" invisible="not x_license_mail_paused">Incoming paused</span>
                                 <span class="o_mailpro_step_value"
                                       invisible="x_license_state != 'connected' or x_setup_account_done or x_license_status in ('invalid', 'revoked')">
@@ -146,7 +156,7 @@
                             </div>
                             <!-- Connected, and the month's included mails are
                                  used with no card on the workspace. Only
-                                 incoming waits, so steps 2 to 4 stay. Add a
+                                 incoming waits, so steps 2 to 5 stay. Add a
                                  card and Check again are on the account page. -->
                             <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_license_mail_paused">
                                 <field name="x_license_mail_paused_msg" nolabel="1" readonly="1"/>
@@ -264,6 +274,40 @@
                     </div>
 
                     <div class="o_mailpro_step o_mailpro_step_mailboxes">
+                        <!-- Green once one mailbox works: not stopped, and
+                             signed in so it reaches its provider. Red when a
+                             mailbox stopped or the provider refused it, with
+                             the sentence under the name. Which one sends
+                             Odoo's own email is step 5 (#415). -->
+                        <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
+                              invisible="x_mailboxes_dot != 'ok'"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
+                              invisible="x_mailboxes_dot != 'warn'"/>
+                        <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
+                              invisible="x_mailboxes_dot != 'todo'"/>
+                        <div class="o_mailpro_step_body">
+                            <div class="o_mailpro_step_head">
+                                <span class="o_mailpro_step_name">4. Mailboxes</span>
+                                <!-- A count, like the domains line. -->
+                                <span class="o_mailpro_step_value" invisible="x_mailboxes_dot == 'todo'">
+                                    <field name="x_mailboxes_summary" nolabel="1" readonly="1"/>
+                                </span>
+                                <span class="o_mailpro_step_value" invisible="x_mailboxes_dot != 'todo'">None working yet</span>
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="x_mailboxes_dot != 'todo'">
+                                The addresses Mail Pro sends and receives on. At least one
+                                has to be signed in and working.
+                            </div>
+                            <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_mailboxes_alert">
+                                <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>
+                            </div>
+                        </div>
+                        <button type="action" name="%(action_pan_mail_mailbox)d"
+                                icon="oi-chevron-right" title="Mailboxes"
+                                class="oe_link o_mailpro_step_edit"/>
+                    </div>
+
+                    <div class="o_mailpro_step o_mailpro_step_notification">
                         <!-- Green only once the owner's sign-in has been seen to
                              read and send from it (the access table), not once
                              the row exists with a token on it: that is the
@@ -279,27 +323,26 @@
                              with the flag is the better way. A step that has
                              stopped is one dot, not two: the red wins. -->
                         <span class="o_mailpro_dot o_mailpro_dot_ok" role="img" aria-label="Done" title="Done"
-                              invisible="x_mailboxes_dot != 'ok'"/>
+                              invisible="x_notification_dot != 'ok'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_warn" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="x_mailboxes_dot != 'warn'"/>
+                              invisible="x_notification_dot != 'warn'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_attention" role="img" aria-label="Attention needed" title="Attention needed"
-                              invisible="x_mailboxes_dot != 'attention'"/>
+                              invisible="x_notification_dot != 'attention'"/>
                         <span class="o_mailpro_dot o_mailpro_dot_todo" role="img" aria-label="To do" title="To do"
-                              invisible="x_mailboxes_dot != 'todo'"/>
+                              invisible="x_notification_dot != 'todo'"/>
                         <div class="o_mailpro_step_body">
                             <div class="o_mailpro_step_head">
-                                <span class="o_mailpro_step_name">4. Mailboxes</span>
-                                <!-- A count, like the domains line. Which of
-                                     them sends Odoo's own mail is a column of
-                                     the list the arrow opens. -->
-                                <span class="o_mailpro_step_value" invisible="not x_setup_notification_done">
-                                    <field name="x_mailboxes_summary" nolabel="1" readonly="1"/>
+                                <span class="o_mailpro_step_name">5. Notification mailbox</span>
+                                <!-- One address: the mailbox ticked to send
+                                     Odoo's own email. -->
+                                <span class="o_mailpro_step_value" invisible="not x_notification_mailbox_email">
+                                    <field name="x_notification_mailbox_email" nolabel="1" readonly="1"/>
                                 </span>
-                                <span class="o_mailpro_step_value" invisible="x_setup_notification_done">No notification mailbox</span>
+                                <span class="o_mailpro_step_value" invisible="x_notification_mailbox_email">Not chosen yet</span>
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_setup_notification_done">
-                                The addresses Mail Pro sends and receives on. One of them
-                                sends Odoo's own email.
+                                The mailbox Odoo sends its own email from, like password
+                                resets. A shared one is best, with you as its owner.
                             </div>
                             <!-- What is still to happen before the dot turns:
                                  one muted line while open, the provider's own
@@ -312,16 +355,16 @@
                                  invisible="x_notification_access_state != 'broken'">
                                 <field name="x_notification_access_msg" nolabel="1" readonly="1"/>
                             </div>
-                            <div class="o_mailpro_step_msg o_mailpro_msg_warn" invisible="not x_mailboxes_alert">
-                                <field name="x_mailboxes_alert" nolabel="1" readonly="1"/>
-                            </div>
                             <div class="o_mailpro_step_msg o_mailpro_msg_attention"
-                                 invisible="x_mailboxes_alert or x_notification_access_state == 'broken' or not x_setup_notification_done or x_notification_mailbox_type != 'personal'">
+                                 invisible="x_notification_access_state == 'broken' or not x_setup_notification_done or x_notification_mailbox_type != 'personal'">
                                 System email from a personal mailbox
                             </div>
                         </div>
+                        <!-- The Mailboxes list, where the notification
+                             column is and where a shared mailbox takes the
+                             flag. -->
                         <button type="action" name="%(action_pan_mail_mailbox)d"
-                                icon="oi-chevron-right" title="Mailboxes"
+                                icon="oi-chevron-right" title="Notification mailbox"
                                 class="oe_link o_mailpro_step_edit"/>
                     </div>
 

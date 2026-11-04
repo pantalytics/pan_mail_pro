@@ -81,7 +81,7 @@ After installing the module, go to **Settings** → scroll to **Mail Pro** and
 press **Connect to Pantalytics** (see
 [docs/getting-started/connect-pantalytics.md](docs/getting-started/connect-pantalytics.md)).
 
-The page is a checklist of four steps. Step 1 is that connection, and its
+The page is a checklist of five steps. Step 1 is that connection, and its
 arrow opens the account page (who connected, plan, usage and billing,
 disconnect); the arrow on each of the other lines opens the table where it
 is answered:
@@ -98,9 +98,12 @@ is answered:
    gmail.com). An empty list offers the domains it can read off the
    database (never the Odoo host) beside New. Add a second domain or change
    it on the list.
-4. **Mailboxes** - the admin's own mailbox, once connected, becomes the
-   notification mailbox if none is ticked yet. Pick another one from the
-   mailbox list whenever you like.
+4. **Mailboxes** - the addresses Mail Pro sends and receives on. Done once
+   one of them is signed in and working.
+5. **Notification mailbox** - the mailbox Odoo sends its own email from,
+   like password resets. If none is ticked yet, the admin's own mailbox takes
+   the job once it is connected. A shared one is best; pick another one from
+   the mailbox list whenever you like.
 
 Who has connected a mailbox, and the invite for the rest, are on the user
 list. A database runs on one provider; switching means editing that row,
@@ -108,7 +111,7 @@ and the provider's console issues a new client secret for it.
 
 You can invite users before any of this is finished. Mail Pro leaves SMTP alone
 until the first mailbox exists, and once it does, invitations and password
-resets wait in the queue until step 4 is done rather than being dropped.
+resets wait in the queue until step 5 is done rather than being dropped.
 
 ### IMAP/SMTP mailboxes (Soverin and friends)
 

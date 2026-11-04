@@ -449,9 +449,9 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 | `pan.mail.mailbox.access` | What one sign-in may do with one mailbox, as the provider last said: `can_read`, `can_send`, each yes / no / unknown, and the provider's own sentence for a refusal. One row per (mailbox, account), written by the access check and by the send path; read by health, the checklist and the heartbeat (§2 *Verified access*) |
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro. For Microsoft, `registration` says whose app: the Pantalytics app (default, nothing to register, §9.20) or the customer's own |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
-| `pan.mail.setup` | Setup steps 2 to 4 and the phase they add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
+| `pan.mail.setup` | Setup steps 2 to 5 and the phase three of them add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
 | `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key, who connected and when, and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts, `incoming_paused()` pauses incoming over the month's mails without a card (§9.17) |
-| `res.config.settings` | The setup checklist — four lines: the account, then three each a link to the table that answers it. Holds no credentials of its own |
+| `res.config.settings` | The setup checklist — five lines: the account, then four each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
 
@@ -1034,7 +1034,7 @@ pan_mail_pro/
 │   ├── pan_mail_provider.py       # The application registration: one row, no toggle (§9.13)
 │   ├── pan_mail_license.py        # The link to a Pantalytics account, the heartbeat, sync_allowed()
 │   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
-│   ├── pan_mail_setup.py          # Setup vs syncing: steps 2 to 4 of the checklist
+│   ├── pan_mail_setup.py          # Setup vs syncing: steps 2 to 5 of the checklist
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral) + the gate ladder
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
@@ -1076,12 +1076,14 @@ condition of its own.
 
 | # | Step | Answered by |
 |---|------|-------------|
-| 1 | Pantalytics account | `pan.mail.license.sync_allowed()` — a gate of its own, not in `pan.mail.setup`, because its refusal names the state the link is in (§9.17). Steps 2 to 4 are hidden until it is answered |
+| 1 | Pantalytics account | `pan.mail.license.sync_allowed()` — a gate of its own, not in `pan.mail.setup`, because its refusal names the state the link is in (§9.17). Steps 2 to 5 are hidden until it is answered |
 | 2 | Email provider | the in-use `pan.mail.provider` row, with its application registration complete — or, for IMAP, its accounts |
 | 3 | Internal domains | at least one `pan.mail.domain` row |
-| 4 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
+| 4 | Mailboxes | a dot, not a gate: one mailbox that is not stopped and has working credentials (`_has_working_credentials`) |
+| 5 | Notification mailbox | a mailbox with `is_notification_mailbox` ticked that can send |
 
-All four are mandatory. There is no partial service: while the phase is `setup`
+Steps 1, 2, 3 and 5 are mandatory; step 4 is on the checklist and not in the
+phase (#415), so sync starts on the same answers as before. There is no partial service: while the phase is `setup`
 the incoming cron returns without fetching, "Try again" refuses with the step
 that is missing, and internal notifications queue with a readable reason instead
 of being cancelled. Nothing here has an opinion once the phase is `syncing`.
@@ -1122,18 +1124,18 @@ Three properties are worth naming, because each was a bug first:
   and the invite button lives on the user list, where the users are. A second
   copy in Settings was a second front door to one action. The end of the line
   below points at that list; it does not copy the button.
-- **The line has an end (#391).** Four steps done and the first incoming mail
-  on a record (`pan.mail.setup.up_and_running`): the checklist folds into one
+- **The line has an end (#391, #415).** Five steps done
+  (`pan.mail.setup.up_and_running`): the checklist folds into one
   line, "Mail Pro is up and running", with Show setup under it. Done is green,
-  and on step 4 amber too: a personal mailbox carrying the system email works
-  and a shared one is a recommendation (#387), so the line keeps step 4's own
+  and on step 5 amber too: a personal mailbox carrying the system email works
+  and a shared one is a recommendation (#387), so the line keeps step 5's own
   sentence under its headline, linked to Mailboxes. Red, the open dot, or
-  another step's amber keep the checklist. A done step 4 alone is not the end, because a mailbox that can send has not shown that
-  mail arrives where it belongs. "On a record" is link coverage's *linked to a
-  document* (`pan.mail.coverage._linked_domain`, §7), read off `mail.message`
-  rather than the routing log, which is cleaned after 90 days. The dot colours
+  another step's amber keep the checklist. The checklist is configuration
+  only: the first mail on a record is an onboarding moment, not a setting, so
+  it is not waited for here. The heartbeat's `setup.done` carries this answer,
+  and the Pantalytics app walks the person to their first mail from it. The dot colours
   are decided once, in `pan.mail.setup.step_dots`; the view draws the word and
-  the end of the line asks whether all four are `ok`, so the two cannot
+  the end of the line asks whether all five are done, so the two cannot
   disagree. Not sticky: a step that turns red later unfolds the checklist,
   because that is where the red dot is. The confetti is once per database
   (`pan_mail_pro.up_and_running_at`, spent by `celebrate_once` from the page
@@ -3057,9 +3059,10 @@ releases before 19.0.22.0.0 call, stays an alias of it.
 
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
-  connected accounts, whether sync is healthy, which of setup steps 2 to 4
-  are answered (`pan.mail.setup.answers()`, three booleans; step 1 is the row
-  the heartbeat is sent under), and for the last 24 hours how
+  connected accounts, whether sync is healthy, the setup answers
+  (`_setup_report`: the phase's three booleans from `pan.mail.setup.answers()`,
+  and `done`, the five checklist steps done, the one the platform reads, #415;
+  step 1 is the row the heartbeat is sent under), and for the last 24 hours how
   many mails were sent and received (`_mail_counts_since`: off
   `mail.message.x_direction`, so one message is one mail, counted on the day
   it reached Odoo by `create_date` whatever the routing outcome, threaded,
@@ -3149,7 +3152,7 @@ releases before 19.0.22.0.0 call, stays an alias of it.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
 - **The account is step 1 of the checklist, and until it is answered the
-  page is that step and About.** Steps 2 to 4 are hidden until step 1 is
+  page is that step and About.** Steps 2 to 5 are hidden until step 1 is
   green (`x_setup_account_done`, an entitled link): before connecting, and
   after the link broke. Every one of them configures a product that will
   not sync, and a checklist you cannot finish reads as the broken thing on
@@ -3189,12 +3192,18 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   after `sync_allowed()` by the same two callers (the cron, which marks the
   mailboxes, and Try again) with its own sentence, and by nothing else: the
   Inbox, new accounts and sending carry on. Step 1 stays done, so steps 2 to
-  4 stay on the page, and it reads Incoming paused with "500 mails this
+  5 stay on the page, and it reads Incoming paused with "500 mails this
   month. Add a card to keep receiving."; the row opens the account page,
   whose one primary button is Add a card to `dashboard_url()` (#382). The
   platform lifts it (a card, the 1st of the month),
   so while it lasts `_retry_if_stuck()` asks every `RETRY_MINUTES` and Check
   again asks at once. The 200-a-day send cap without a card is #128.
+- **Step 1 names the workspace** (#418, the platform half is
+  odoo-mcp-pro-admin#623). The signed answer may carry `workspace_name`,
+  read off `entitlement_json` by `workspace_name()` like `mail_usage()` and
+  cut to 255 characters; step 1 shows it in place of Connected, cut with an
+  ellipsis on the line. No name, an empty one or one that is not a string
+  reads Connected, as before.
 - **No grace period.** A trial is the server's business (a plan or a Stripe
   status), so the module asks one question. Existing customers are upgraded
   and connected in one session; incoming sync pauses for those minutes and the
