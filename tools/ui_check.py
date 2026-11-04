@@ -5328,17 +5328,22 @@ class Checks:
 
     # The four stops, their names under the slider and the full labels a
     # screen reader hears (`sync_level`'s selection).
-    SYNC_STOPS = ('Replies', '+ Sent Items', '+ known contacts', '+ new contacts')
-    SYNC_LABELS = ('Replies', 'Replies and Sent Items',
-                   'Replies, Sent Items and known contacts',
-                   'Replies, Sent Items, known and new contacts')
+    SYNC_STOPS = ('Replies', '+ sent replies', '+ existing contacts', '+ new contacts')
+    SYNC_LABELS = ('Replies', 'Received and sent replies',
+                   'Replies and existing contacts',
+                   'Replies, existing and new contacts')
+    # The grid's rows in screen order, receiving then sending (#419): the
+    # first stop at which each is in Odoo, None for the one no stop brings in.
+    SYNC_GROUPS = ('Receiving', 'Sending')
+    SYNC_ROWS = (0, 2, 3, 1, None)
 
     def sync_slider_walk(self, page, scope, field, where, shots=None):
         """Click every stop of the sync level slider under `scope` and read
-        the grid back: the mail app column always on, the Odoo column on for
-        rows 0..stop, the row a stop adds marked for a moment, the full label
-        in `aria-valuetext`. Then the arrows, and each row's info dot opening
-        and closing its line. Leaves the slider on the last stop.
+        the grid back: the intro above the slider, the two groups, one In
+        Odoo column on for the rows the stop brings in (`SYNC_ROWS`), the row
+        a stop adds marked for a moment, the full label in `aria-valuetext`,
+        the line under the grid. Then the arrows, and each row's info dot
+        opening and closing its line. Leaves the slider on the last stop.
 
         `shots` maps a stop to a screenshot name, taken of the widget's row.
         Returns False when the slider is not there at all.
@@ -5351,6 +5356,40 @@ class Checks:
             return False
         if page.query_selector(f'{scope} .o_field_widget[name="{field}"] .o_radio_input'):
             self.fail(f'{where}: the sync level is still a radio')
+
+        # The words around the grid: the intro above the slider, one column
+        # head, the two group headings, the line under it (#419).
+        words = page.evaluate("""(root) => {
+            const el = document.querySelector(root);
+            const intro = el.querySelector('.o_mailpro_sync_intro');
+            const slider = el.querySelector('.o_mailpro_sync_slider');
+            const never = el.querySelector('.o_mailpro_sync_never');
+            const grid = el.querySelector('.o_mailpro_sync_grid');
+            const text = (n) => (n ? n.textContent.trim() : '');
+            return {
+                intro: text(intro),
+                introFirst: !!(intro && slider && (intro.compareDocumentPosition(slider)
+                    & Node.DOCUMENT_POSITION_FOLLOWING)),
+                cols: [...el.querySelectorAll('thead th')].map(text),
+                groups: [...el.querySelectorAll('.o_mailpro_sync_heading')].map(text),
+                never: text(never),
+                neverLast: !!(never && grid && (grid.compareDocumentPosition(never)
+                    & Node.DOCUMENT_POSITION_FOLLOWING)),
+            };
+        }""", root)
+        if not words['intro'].startswith('Mail Pro links each conversation') \
+                or not words['introFirst']:
+            self.fail(f'{where}: no intro above the slider ({words["intro"][:60]!r})')
+        if words['cols'] != ['In Odoo']:
+            self.fail(f'{where}: the grid\'s columns read {words["cols"]}, expected one, In Odoo')
+        if tuple(words['groups']) != self.SYNC_GROUPS:
+            self.fail(f'{where}: the grid\'s groups read {words["groups"]}')
+        if 'Block Email Sync' not in words['never'] or not words['neverLast']:
+            self.fail(f'{where}: no line under the grid on what never comes in')
+        text = page.inner_text(root).lower()
+        for vague in ('lands on', 'goes on', 'sent items'):
+            if vague in text:
+                self.fail(f'{where}: the slider still says "{vague}"')
 
         # Each name under its own stop, on one line, none over its neighbour.
         geometry = page.evaluate("""(root) => {
@@ -5391,8 +5430,8 @@ class Checks:
                 return {
                     value: input.value,
                     text: input.getAttribute('aria-valuetext'),
-                    app: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
-                        (r) => !!r.querySelector('.o_mailpro_sync_app .o_mailpro_sync_on')),
+                    rows: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
+                        (r) => r.dataset.row),
                     odoo: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
                         (r) => !!r.querySelector('.o_mailpro_sync_odoo .o_mailpro_sync_on')),
                     flash: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
@@ -5415,11 +5454,11 @@ class Checks:
                 self.fail(f'{where}: {why}, the slider is at {state["value"]}, expected {stop}')
             if state['text'] != self.SYNC_LABELS[stop]:
                 self.fail(f'{where}: {why}, aria-valuetext is {state["text"]!r}')
-            if state['app'] != [True] * 4:
-                self.fail(f'{where}: {why}, the mail app column reads {state["app"]}')
-            wanted = [row <= stop for row in range(4)]
+            if state['rows'] != [str(row) for row in range(len(self.SYNC_ROWS))]:
+                self.fail(f'{where}: {why}, the rows are {state["rows"]}')
+            wanted = [first is not None and stop >= first for first in self.SYNC_ROWS]
             if state['odoo'] != wanted:
-                self.fail(f'{where}: {why}, the Odoo column reads {state["odoo"]}, '
+                self.fail(f'{where}: {why}, the In Odoo column reads {state["odoo"]}, '
                           f'expected {wanted}')
             return state
 
@@ -5430,7 +5469,7 @@ class Checks:
             page.click(f'{root} .o_mailpro_sync_stop[data-stop="{stop}"]')
             state = expect(stop, f'after clicking "{self.SYNC_STOPS[stop]}"')
             # The row this stop adds is the one that is marked, and only it.
-            if stop and state['flash'] != [row == stop for row in range(4)]:
+            if stop and state['flash'] != [first == stop for first in self.SYNC_ROWS]:
                 self.fail(f'{where}: moving to stop {stop} marked rows {state["flash"]}')
             page.wait_for_timeout(500)
             if shots and stop in shots and self.out:
@@ -5452,7 +5491,7 @@ class Checks:
             self.fail(f'{where}: the slider loses focus to the arrows')
 
         # Every row's info dot opens one muted line and closes it again.
-        for row in range(4):
+        for row in range(len(self.SYNC_ROWS)):
             dot = f'{root} .o_mailpro_sync_row[data-row="{row}"] .o_mailpro_sync_info'
             line = f'{root} .o_mailpro_sync_row[data-row="{row}"] .o_mailpro_sync_detail'
             page.click(dot)
@@ -5460,6 +5499,9 @@ class Checks:
             if page.get_attribute(dot, 'aria-expanded') != 'true' \
                     or not page.is_visible(line) or len(page.inner_text(line)) < 20:
                 self.fail(f'{where}: the info dot of row {row} does not open its line')
+            elif 'link' not in page.inner_text(line):
+                self.fail(f'{where}: row {row}\'s line does not say which record '
+                          'Mail Pro links the conversation to')
             page.click(dot)
             page.wait_for_timeout(150)
             if page.get_attribute(dot, 'aria-expanded') != 'false' or page.query_selector(line):
@@ -5467,8 +5509,8 @@ class Checks:
         return True
 
     def sync_slider(self):
-        """The sync level on the mailbox form is a slider over what lands
-        where (#390), in light and in dark.
+        """The sync level on the mailbox form is a slider over what reaches
+        Odoo (#390, #419), in light and in dark.
 
         Every stop is clicked and the grid read back, the widest is saved and
         lands on the row, and in dark mode every line of it, each row's

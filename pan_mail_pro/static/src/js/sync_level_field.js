@@ -1,11 +1,12 @@
 /** @odoo-module */
 /**
- * The sync level as a slider, with what lands where under it (#390).
+ * The sync level as a slider, with what reaches Odoo under it (#390, #419).
  *
- * Four stops, one to one with `sync_level`'s selection, in its order. Under
- * the slider one grid: the four kinds of mail a mailbox receives, your mail
- * app always has each of them, and the Odoo record gets one more row per
- * stop. The radio it replaces listed four labels and showed none of that.
+ * Four stops, one to one with `sync_level`'s selection, in its order. Above
+ * the slider one line on what Mail Pro does with a conversation; under it one
+ * grid: the emails a mailbox receives and sends, in two groups, and an In
+ * Odoo column that follows the slider. One row is in Odoo at every stop, one
+ * at none, and each stop above the first adds exactly one row.
  *
  * Used on the mailbox form and on My Preferences (`x_pan_mail_sync_level`,
  * the same selection read through `res.users`). Odoo's own range input
@@ -22,36 +23,65 @@ import { defineProps, useProps, useState } from "@pan_mail_pro/compat/owl";
 // What each stop adds, as the name under it. Same order as the selection.
 const STOPS = [
     _t("Replies"),
-    _t("+ Sent Items"),
-    _t("+ known contacts"),
+    _t("+ sent replies"),
+    _t("+ existing contacts"),
     _t("+ new contacts"),
 ];
 
-// Row `from` is the first stop at which the Odoo record gets it. Each detail
-// line is what `pan.mail.fetcher._gate_wanted` and `_folders_to_sync` do,
-// in the reader's words; change one and change the other.
-const ROWS = [
+// The intro above the slider and the line under the grid. Both are true at
+// every stop: the first is what Mail Pro does, the second what no stop lets in
+// (`_gate_internal_domain`, `_gate_blocked_contact`).
+const INTRO = _t("Mail Pro links each conversation to one Odoo record, such as a quote or a contact, and shows the conversation's emails on that record. The sync level decides which emails Mail Pro brings into Odoo from your mailbox. Your mail app keeps all of them.");
+const NEVER = _t("Email between colleagues on your internal domains never comes into Odoo. Neither does email with a contact who has Block Email Sync turned on.");
+
+// Row `from` is the first stop at which the row is in Odoo, `null` for a row
+// no stop brings in. Each detail line is what `pan.mail.fetcher._gate_wanted`
+// and `_folders_to_sync` do and where `pan.mail.matcher` links the
+// conversation, in the reader's words; change one and change the other.
+const GROUPS = [
     {
-        name: _t("Replies"),
-        from: 0,
-        detail: _t("A reply to mail you sent from Odoo, or to a conversation Odoo already has, lands on the record it continues. This happens at every level."),
+        name: _t("Receiving"),
+        rows: [
+            {
+                name: _t("Replies"),
+                from: 0,
+                detail: _t("Someone replies in a conversation that is already in Odoo. Mail Pro adds the reply to that conversation, on the record it is linked to. The sender can be an existing or a new contact."),
+            },
+            {
+                name: _t("New conversation from an existing contact"),
+                from: 2,
+                detail: _t("Someone who is already a contact in Odoo starts a new conversation with you. Mail Pro links the conversation to the record whose number is in the subject, otherwise to that contact."),
+            },
+            {
+                name: _t("New conversation from a new contact"),
+                from: 3,
+                detail: _t("Someone who is not a contact in Odoo yet starts a new conversation with you. Mail Pro adds them as a contact, then links the conversation to the record whose number is in the subject, otherwise to the new contact."),
+            },
+        ],
     },
     {
-        name: _t("Sent Items"),
-        from: 1,
-        detail: _t("What you answer from your mail app on a conversation Odoo already has. A new mail you start there stays out, because Odoo can't tell where it belongs."),
-    },
-    {
-        name: _t("New mail from a known contact"),
-        from: 2,
-        detail: _t("A new conversation from someone who is already a contact in Odoo. It lands on the record its subject names, or else on that contact."),
-    },
-    {
-        name: _t("New mail from a new contact"),
-        from: 3,
-        detail: _t("A new conversation from an address Odoo doesn't know yet. Odoo creates the contact. Mail between your own internal domains always stays out."),
+        name: _t("Sending"),
+        rows: [
+            {
+                name: _t("Replies from your mail app"),
+                from: 1,
+                detail: _t("You reply from your mail app in a conversation that is already in Odoo. Mail Pro adds your reply to that conversation, on the record it is linked to."),
+            },
+            {
+                name: _t("New conversation from your mail app"),
+                from: null,
+                detail: _t("You start a new conversation in your mail app, with an existing or a new contact. Mail Pro never brings it into Odoo, because it can't tell which record to link the conversation to."),
+            },
+        ],
     },
 ];
+
+// Every row once, numbered across the groups: the number is the row's key
+// for its info dot and its flash, and `data-row` on screen.
+const ROWS = GROUPS.flatMap((group) => group.rows);
+ROWS.forEach((row, index) => {
+    row.index = index;
+});
 
 // How long a row that just changed stays marked. The stylesheet's animation
 // is the same length, and off under prefers-reduced-motion.
@@ -67,7 +97,10 @@ export class SyncLevelField extends Component {
         this.props = useProps();
         this.id = `o_mailpro_sync_level_${nextId++}`;
         this.stops = STOPS;
+        this.groups = GROUPS;
         this.rows = ROWS;
+        this.intro = INTRO;
+        this.never = NEVER;
         this.state = useState({ open: {}, flash: [] });
         this.flashTimer = null;
         onWillUnmount(() => clearTimeout(this.flashTimer));
@@ -98,7 +131,7 @@ export class SyncLevelField extends Component {
     }
 
     inOdoo(row) {
-        return this.index >= row.from;
+        return row.from !== null && this.index >= row.from;
     }
 
     choose(index) {
@@ -110,13 +143,14 @@ export class SyncLevelField extends Component {
         if (target === before) {
             return;
         }
-        // The rows whose Odoo mark flips: every row whose stop lies between
-        // the old position and the new one.
+        // The rows whose In Odoo mark flips: every row whose stop lies
+        // between the old position and the new one. A row no stop brings in
+        // never flips.
         const low = Math.min(before, target);
         const high = Math.max(before, target);
         this.state.flash = this.rows
-            .map((row, i) => (row.from > low && row.from <= high ? i : -1))
-            .filter((i) => i >= 0);
+            .filter((row) => row.from !== null && row.from > low && row.from <= high)
+            .map((row) => row.index);
         clearTimeout(this.flashTimer);
         this.flashTimer = setTimeout(() => {
             this.state.flash = [];
