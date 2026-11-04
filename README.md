@@ -65,8 +65,11 @@ git submodule add -b 19.0 https://github.com/pantalytics/pan_mail_pro pantalytic
 git commit -m "Add pan_mail_pro" && git push
 ```
 
-**Cloudpepper**: your instance → Modules → Git → add
-`https://github.com/pantalytics/pan_mail_pro`, branch `19.0`, restart.
+**Cloudpepper**: your instance → **Addons** → **Add Git repository** →
+`https://github.com/pantalytics/pan_mail_pro`, branch `19.0`, **All addons
+(recommended)** → **Add module**. Then **Settings** on that row: switch on
+**Install Python requirements on update** and **Auto upgrade module(s) on
+update**. Step by step in the [guide](docs/getting-started/installation.md#cloudpepper).
 
 **Your own server or Docker**: `git clone -b 19.0
 https://github.com/pantalytics/pan_mail_pro` into a folder on `addons_path`,
