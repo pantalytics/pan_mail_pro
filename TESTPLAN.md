@@ -83,6 +83,21 @@ derdepartij-`helpdesk_community` helpt dus niet.
 
 ---
 
+## Enterprise per serie
+
+Same code op drie series (`18.0`, `19.0`, `20.0`; docs/plans/multi-version.md).
+CI draait op het community-image, dus de Enterprise-paden worden per release
+met de hand gelopen op de Enterprise-instance van die serie. Geen
+Enterprise-instance voor een serie betekent: die serie wordt niet gereleased.
+
+| Controle | 18.0 | 19.0 | 20.0 |
+|---|---|---|---|
+| Instance om op te lopen | geen 18-server op Cloudpepper | lokale Docker (Enterprise-source) | `odoo-20-enterprise-demo.cloudpepper.site` (module nog niet aangekoppeld) |
+| Dark mode: elk paneel donker, geen tekst onder 3:1 (`tools/ui_check.py` doet dit op community met `pan_mail_pro_ci_dark`) | [ ] | [ ] | [ ] |
+| `WebClientEnterprise`: geen wit scherm, de connect-banner tekent (19.0.7.7.1) | [ ] | [ ] | [ ] |
+| Helpdesk-routing: `x_route_to_team`, alias naar `helpdesk.team`, ticket via `message_new()` (A3) | [ ] | [ ] | [ ] |
+| Inbox: vier panelen, reply in het paneel, de tour | [ ] | [ ] | [ ] |
+
 ## Fase A′ — Functioneel op de CloudPepper-testinstance
 
 Instance: **https://mailpro-dev.cloudpepper.site** — nieuw aangemaakt, niet
@@ -97,6 +112,13 @@ als `CLOUDPEPPER_MAILPRO_DEV_ADMIN_PASSWORD` (project `prod`).
 - [ ] Bijwerken naar 19.0.26.0.0. Een push herstart, maar upgradet niet
       (issue #134): na een merge met versiebump Apps → Mail Pro → Upgrade, en
       daarna in `ir_module_module` controleren dat de nieuwe versie er staat.
+
+Per serie één instance (CLAUDE.md, *Cloudpepper dev instances*):
+`mailpro-dev` volgt `19.0`, `mailpro-dev-20` (https://mailpro-dev-20.cloudpepper.site,
+server `Pantalytics Demo v20`, community) volgt `20.0` sinds 03-11, module
+`20.0.34.1.1`; wachtwoord `CLOUDPEPPER_MAILPRO_DEV_20_ADMIN_PASSWORD`, nog in
+Bitwarden te zetten. Nog niet gekoppeld aan een workspace, dus de Inbox toont
+daar nog de connect-gate. Een 18-instance wacht op een 18-server.
 
 Voordelen t.o.v. lokaal: echte https-URL (geen localhost-uitzonderingen in
 Azure/Google), bereikbaar vanuit cloud-sessies, en de omgeving lijkt op wat
@@ -189,22 +211,22 @@ Opzettelijke gedragsveranderingen. Ze moeten precies doen wat er staat.
 ### Eén sync-ladder per mailbox (19.0.8.0.0)
 
 Het mailboxformulier vraagt één ding: hoeveel van deze mailbox leest Odoo
-terug (`sync_level`, tab Sync settings). Vier treden, elke trede houdt strikt
+terug (`sync_level`, de rij Sync level). Vier treden, elke trede houdt strikt
 meer dan de vorige. Replies op mail die Odoo al heeft komen op élke trede
 binnen; dat is geen instelling.
 
 - [ ] **Replies** (standaard): een reply van een klant op een
       mail uit Odoo landt op het record; een nieuwe mail van dezelfde klant
       komt niet binnen; de Sent-map wordt niet gelezen
-- [ ] **Replies and Sent Items**: een antwoord dat de eigenaar in
+- [ ] **Received and sent replies**: een antwoord dat de eigenaar in
       Outlook/Gmail op een Odoo-thread typt, verschijnt op het record; een
       nieuwe mail die hij vanuit zijn mailclient start blijft buiten
-- [ ] **Replies, Sent Items and known contacts**: een nieuwe mail van
+- [ ] **Replies and existing contacts**: een nieuwe mail van
       een bestaand contact komt binnen (contact-chatter, of team-alias als
       "Route new conversations to a team" aanstaat); van een onbekende
       afzender niet, en in het log staat één regel met de mailbox, de
       Message-ID en de reden
-- [ ] **Replies, Sent Items, known and new contacts**: dezelfde mail van de onbekende
+- [ ] **Replies, existing and new contacts**: dezelfde mail van de onbekende
       afzender komt alsnog binnen en de afzender wordt een contact. De
       waarschuwing over nieuwsbrieven en privémail staat onder de keuze
 - [ ] Op een **bestaande** database na de upgrade: de oude keuze is op de
@@ -239,7 +261,7 @@ binnen; dat is geen instelling.
       Sent Items and known contacts" wordt geweigerd. In het log
       staat één regel met de mailbox, de Message-ID en `unknown_contact`; er
       wordt niets opgeslagen
-- [ ] Zet de mailbox op "Replies, Sent Items, known and new contacts" en sync opnieuw:
+- [ ] Zet de mailbox op "Replies, existing and new contacts" en sync opnieuw:
       dezelfde mail komt alsnog binnen. Dit is de vervanger van de
       triage-wachtrij
 - [ ] `pan_mail_item` bestaat niet meer als tabel, en er zijn geen
@@ -371,36 +393,39 @@ met de eerste vier).**
 
 - [x] Na de upgrade leest elke mailbox healthy of met de zin die de tabel
       geeft, nooit "Reconnect": soort is *Unknown* en dat kleurt niets
-- [x] Mailbox → **Check mailbox**: rij voor de eigen sign-in met *can read:
-      yes*; `access_checked_date` gezet; geen rij in Errors
-- [x] Testmail vanaf notifications@: aangekomen; rij *can send: yes*; stap 4
+- [x] Reconnect (de consent-callback checkt meteen): rij voor de eigen
+      sign-in met *can read: yes*; `access_checked_date` gezet; geen rij in
+      Errors
+- [x] Eerste systeemmail vanaf notifications@: aangekomen; rij *can send: yes*; stap 4
       van de checklist groen (Settings → Mail Pro)
 - [x] Disconnect, dan Connect mailbox onder My Preferences → Mail Pro: het
       consent-scherm is ongewijzigd, geen *needs admin approval*
 - [ ] **De Emovr-vorm.** Maak een shared mailbox voor een adres waar jouw
       sign-in geen Full Access op heeft (bijv. `daniel@pantalytics.com`
-      met jou als owner). Check mailbox: badge *error*, zin "rutger@… cannot
-      read daniel@…. An administrator grants Full Access…"; rij in Errors
+      met jou als owner). Reconnect of wacht op de uurlijkse check: badge
+      *error*, zin "rutger@… cannot read daniel@…. Give that sign-in access
+      to the mailbox in your mail admin."; rij in Errors
       onder `access.read_denied`. Dit is de check die bij Emovr zes maanden
       ontbrak
 - [ ] Verstuur toch een mail vanaf die mailbox: `failure_reason` draagt
       dezelfde zin, de rij zegt *can send: no*, Errors krijgt
       `access.send_denied`. Geen omleiding naar een ander adres
 - [ ] Geef in het Exchange admin center Full Access (nog geen Send As),
-      wacht een paar minuten, Check mailbox: *can read: yes*, badge weg.
+      wacht een paar minuten, Try again: *can read: yes*, badge weg.
       Verstuur: `ErrorSendAsDenied`, zin noemt Send As. Geef Send As,
       verstuur: *can send: yes*, healthy. De tabel onthoudt de `yes` en een
       latere check overschrijft die niet met `unknown`
 - [ ] Een adres dat niet bestaat als mailbox (een distributielijst of een
-      typefout): Check mailbox zegt "There is no mailbox at …"; badge *error*;
+      typefout): na reconnect of de uurlijkse check zegt de statusregel
+      "There is no mailbox at …"; badge *error*;
       de mailboxes-regel op Settings toont de alert
 - [ ] Het uurlijkse pad: wacht een uur, `access_checked_date` is bijgewerkt
-      zonder dat iemand op Check mailbox drukte; de sync zelf is niet
+      zonder dat iemand iets deed; de sync zelf is niet
       vertraagd
-- [ ] Gmail (mailpro-dev of een Workspace-account): Check mailbox op de eigen
+- [ ] Gmail (mailpro-dev of een Workspace-account): reconnect op de eigen
       mailbox leest *yes* via het profiel; een shared Gmail-adres zonder
       send-as geeft "X has no send-as address for Y"
-- [ ] IMAP (Soverin): Check mailbox doet `SELECT INBOX` en `MAIL FROM`/`RSET`;
+- [ ] IMAP (Soverin): de check doet `SELECT INBOX` en `MAIL FROM`/`RSET`;
       een afzender die de server weigert geeft de 5xx-regel van de server
 
 **Deel 2: opt-in, alleen op de Pantalytics-tenant.** Dit vult de cellen
@@ -414,7 +439,7 @@ Azure-registratie aan te raken.
 - [ ] Reconnect één sign-in. Op de account (Settings → Technical → Email →
       Mail Pro → Accounts) staan beide scopes in *granted scopes*; `tid` en
       de principal name zijn gevuld
-- [ ] Check mailbox: Kind wordt *User* op een persoonlijk adres, *Shared* op
+- [ ] Na de reconnect: Kind wordt *User* op een persoonlijk adres, *Shared* op
       `notifications@` (als dat in Exchange echt een shared mailbox is). Noteer
       het antwoord van `userPurpose` in `provider-probes.md` en zet de
       cel op *observed*
@@ -425,14 +450,14 @@ Azure-registratie aan te raken.
       *Alias*, badge *error*, zin "… is an alias on another mailbox". Noteer
       de exacte 404-code van de directory-lookup in `provider-probes.md`
 - [ ] Een room of equipment mailbox: Kind *Resource*, *can send: no*
-- [ ] Een sign-in die níét is gereconnect: Check mailbox slaat rung 3 en 4
+- [ ] Een sign-in die níét is gereconnect: de uurlijkse check slaat rung 3 en 4
       stil over, soort blijft *Unknown*, geen zin, geen rij in Errors
 - [ ] Parameter weer op `False` of verwijderen: nieuwe connects vragen de
       scopes niet meer; bestaande grants houden ze en de rungen blijven
       werken voor die accounts
 
-**Deel 3: Emovr.** Na de upgrade van odoo-customer-emovr: Check mailbox op
-`info@emovr.nl` met Robert als owner geeft precies de zin uit deel 1
+**Deel 3: Emovr.** Na de upgrade van odoo-customer-emovr: de uurlijkse check
+op `info@emovr.nl` met Robert als owner geeft precies de zin uit deel 1
 (`robert@stalero.nl cannot read info@emovr.nl`), en Daniëlle, aangemeld als
 `info@` zelf, leest *yes*. De fix is één van de twee uitwegen uit de zin, en
 de badge bewijst welke is gekozen.

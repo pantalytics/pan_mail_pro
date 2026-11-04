@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
     <!-- Settings > Mail Pro once onboarding is done (#391): one line where
-         the four steps were, the one next action under it, and the steps one
+         the five steps were, the one next action under it, and the steps one
          click deeper. The rocket is the platform's (odoo-mcp-pro-admin #595). -->
     <t t-name="pan_mail_pro.UpAndRunning">
         <div class="o_mailpro_running" t-att-class="{ o_mailpro_running_open: this.state.open }">
@@ -15,7 +15,7 @@
                 </svg>
                 <span class="o_mailpro_running_title">Mail Pro is up and running</span>
             </div>
-            <!-- Step 4 amber: the same status the step shows, one line,
+            <!-- Step 5 amber: the same status the step shows, one line,
                  and the way to the list where a shared mailbox takes the
                  flag (#387). -->
             <button t-if="this.personalNotification" type="button"

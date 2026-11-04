@@ -265,8 +265,9 @@ class TestSetupChecklist(TransactionCase):
         settings = self._settings()
         self.assertTrue(settings.x_setup_notification_done)
         self.assertEqual(self.env['mail.mail']._notification_mailbox(), mailbox)
-        # The line answers with a count; which one sends is on the list.
+        # Step 4 answers with a count, step 5 with the one address (#415).
         self.assertEqual(settings.x_mailboxes_summary, '1 mailbox')
+        self.assertEqual(settings.x_notification_mailbox_email, 'notifications@checklist.test')
 
     def test_an_oauth_notification_mailbox_needs_a_connected_owner(self):
         """The step that asked "has anybody signed in" is now this constraint."""

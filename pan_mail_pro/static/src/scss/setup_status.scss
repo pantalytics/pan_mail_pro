@@ -164,30 +164,6 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
     max-width: 46rem;
 }
 
-// The mailbox form's Setup tab, as the brand guide's settings page: a card of
-// rows per section. No shadow; a 1px border is the only depth
-// (brand.pantalytics.com/product-ui).
-.o_mailpro_card {
-    border: 1px solid var(--border-color, rgba($mailpro-ink, 0.12));
-    border-radius: 0.5rem;
-    padding: 1rem 1.25rem;
-}
-
-// The mailbox's own setup flow. An editable many2one is taller than a name, so
-// the line sits on the text baseline rather than the box centre; and a field
-// you type in stays beside the name, where the cursor lands, rather than at
-// the far end of the line.
-.o_mailpro_flow {
-    .o_mailpro_step_head { align-items: baseline; }
-    .o_mailpro_step_value {
-        margin-left: 0;
-        text-align: left;
-        white-space: normal;
-        overflow: visible;
-        .o_field_widget, .o_field_widget span, .o_field_widget div { display: revert; }
-    }
-}
-
 // A copy (staging, a restore): one line above the checklist, in the amber of
 // "something to know that is not broken". Not an alert box: it is a fact
 // about the database, and the checklist under it is still the status. Scoped
@@ -199,7 +175,7 @@ $mailpro-attention-text: if($mailpro-dark, #e8a317, #8a5a00);
     color: $mailpro-attention-text;
 }
 
-// The end of onboarding (#391): one line where the four steps were, in the
+// The end of onboarding (#391): one line where the five steps were, in the
 // same rounded group, with the rocket the platform's install screen ends on
 // (odoo-mcp-pro-admin #595) in place of the dots.
 $mailpro-accent: if($mailpro-dark, #9b99ff, #7b78e6);

@@ -39,8 +39,8 @@ per-folder cursor catches up afterwards, so no mail is lost.
 **What leaves the database** is `_heartbeat_body()`, and the whole list is in
 that one method: the database id, two version strings, where it runs (one of
 `sh`, `cloudpepper`, `self_hosted`), how many accounts are connected, whether
-sync is healthy, which of the three setup steps are answered, and for the last
-24 hours how many mails were sent and received, the
+sync is healthy, which of the three setup steps are answered and whether the
+whole checklist is done, and for the last 24 hours how many mails were sent and received, the
 four link coverage counts, per matching rule how often it decided and how often
 a person overruled it, and how many conversations were linked by hand. Counts,
 flags and rule names. No address, subject, body or name.
@@ -48,7 +48,10 @@ flags and rule names. No address, subject, body or name.
 **The setup answers do not wait for tomorrow.** Pantalytics draws them as the
 Get started line the customer is standing in front of, so a step answered here
 pushes a heartbeat within the minute (`_report_setup_if_changed`, from the
-fetch cron). Daily is right for counts and wrong for a checklist.
+fetch cron). Daily is right for counts and wrong for a checklist. `setup.done`
+is the one answer the platform reads (#415): the settings checklist's five
+steps done (`pan.mail.setup.up_and_running`), which is when it walks the
+person to their first mail.
 
 **Usage and billing are read at Pantalytics, not here.** `dashboard_url()` is
 the button the account page offers, and there is no usage screen in Odoo: a
@@ -69,6 +72,11 @@ these heartbeats. Over the included mails with no card on the workspace,
 way `sync_allowed()` stops it on an unconnected Odoo; sending never waits.
 Read off `entitlement_json` (`mail_usage()`), so an older platform that sends
 none of the three means no limit.
+
+**So does the workspace's name** (pan_mail_pro#418): `workspace_name`, which
+step 1 of the settings checklist shows in place of "Connected". Read off
+`entitlement_json` the same way (`workspace_name()`); an answer without it
+reads "Connected", as before.
 
 **Trust.** An entitlement is only stored after its Ed25519 signature checks out
 against the public key this module ships and its `db_uuid` matches this
@@ -251,7 +259,10 @@ def _count(value):
 
 
 def setup_signature(answers):
-    """The answered setup steps as one string, to compare two heartbeats by."""
+    """The answered setup steps as one string, to compare two heartbeats by.
+
+    `done` is one of the keys (#415), so the checklist finishing, or opening
+    again, is a change that pushes a heartbeat within the minute."""
     return ','.join(step for step, done in sorted(answers.items()) if done)
 
 
@@ -465,6 +476,22 @@ class PanMailLicense(models.Model):
             'mails_used_month': _count(payload.get('mails_used_month')),
             'card': payload.get('card') is True,
         }
+
+    def workspace_name(self):
+        """The Pantalytics workspace this Odoo is connected to, or ''.
+
+        Read off `entitlement_json` like `mail_usage()`, and as defensive: an
+        answer from a platform that does not send it yet, a value that is not
+        a string, or JSON we cannot read all give '', which step 1 shows as
+        "Connected". Cut to 255 characters, like `improve_host`.
+        """
+        self.ensure_one()
+        try:
+            payload = json.loads(self.entitlement_json or '{}')
+        except ValueError:
+            payload = {}
+        name = payload.get('workspace_name') if isinstance(payload, dict) else None
+        return name.strip()[:255] if isinstance(name, str) else ''
 
     @api.model
     def incoming_paused(self):
@@ -870,7 +897,7 @@ class PanMailLicense(models.Model):
         link = self.current()
         if not link or not link.key_encrypted:
             return
-        signature = setup_signature(self.env['pan.mail.setup'].answers())
+        signature = setup_signature(self._setup_report())
         if signature == (link.setup_reported or ''):
             return
         if link.last_check and fields.Datetime.now() - link.last_check < timedelta(
@@ -1016,6 +1043,17 @@ class PanMailLicense(models.Model):
         return None
 
     @api.model
+    @api.model
+    def _setup_report(self):
+        """`setup` in the heartbeat: the phase's three answers and `done`.
+
+        `done` is the checklist's own end (`pan.mail.setup.up_and_running`):
+        all five steps done, an amber step 5 included. The three booleans
+        stay for platform builds that still read them (#415).
+        """
+        Setup = self.env['pan.mail.setup']
+        return dict(Setup.answers(), done=bool(Setup.up_and_running()))
+
     def _heartbeat_body(self):
         """Everything this database tells Pantalytics. The whole list.
 
@@ -1035,10 +1073,11 @@ class PanMailLicense(models.Model):
         (mail-pro-admin `docs/plans/mail-pro-paid.md`), and this is the trend,
         not the meter.
 
-        **The setup answers are three booleans, not a report.** They say which
-        of `pan.mail.setup`'s three steps this database has answered, so the
-        Get started line at Pantalytics can tick what is done instead of
-        asking the customer to tell it twice.
+        **The setup answers are four booleans, not a report** (`_setup_report`).
+        `done` is the one the platform reads (#415): the five steps of the
+        settings checklist done, so the Pantalytics app knows paired from set
+        up. The other three say which of `pan.mail.setup`'s phase steps this
+        database has answered; they stay for platform builds that read them.
 
         **`hosting` is one word from a fixed list** (odoo-mcp-pro-admin#598):
         `sh` when Odoo.sh set `ODOO_STAGE`, `cloudpepper` when the config
@@ -1094,11 +1133,11 @@ class PanMailLicense(models.Model):
             'mails_by_day': self._mails_by_day(),
             'sync_ok': (not stale and not Mailbox.search_count([('state', '=', 'error')])
                         if mailboxes else None),
-            # The three setup steps as `pan.mail.setup` answers them, which is
-            # the same answer the checklist on the settings page draws. Three
+            # The setup steps as `pan.mail.setup` answers them, which is the
+            # same answer the checklist on the settings page draws. Four
             # booleans about this database's configuration; a step name can
             # carry nothing else.
-            'setup': self.env['pan.mail.setup'].answers(),
+            'setup': self._setup_report(),
             'coverage': self.env['pan.mail.coverage'].counts_since(since),
             'rules': rules[:MAX_RULE_ENTRIES],
             'corrections': sum(r['corrected'] for r in rules),

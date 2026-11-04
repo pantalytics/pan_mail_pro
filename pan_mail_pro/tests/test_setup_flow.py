@@ -4,7 +4,8 @@
 The provider's own picker and credential-completeness rules moved to
 `tests/test_pan_mail_provider.py` with the fields they guard — this file is
 only about the three-step phase built on top of them, which the settings
-page numbers 2 to 4 after the Pantalytics account.
+page numbers 2, 3 and 5 after the Pantalytics account (step 4 there is a
+mailbox that works, a dot and not a gate, #415).
 """
 from unittest.mock import patch
 
@@ -46,16 +47,21 @@ class TestSetupPhase(TransactionCase):
 
     def test_the_steps_are_numbered_after_the_account(self):
         """The Pantalytics account is step 1 on the settings page and a gate
-        of its own, so the first step here is 2 and the banner says "of 4"."""
+        of its own, so the first step here is 2 and the banner says "of 5":
+        the page has five steps since #415, and the notification mailbox is
+        step 5 there."""
         self.assertEqual(pan_mail_setup.ACCOUNT_STEP, 1)
         answers = self._answers(provider=False)
         self.assertEqual(self.Setup.blocking_step(answers)[:2], (2, 'provider'))
-        self.assertIn('Step 2 of 4', self.Setup.blocking_step_label(answers))
+        self.assertIn('Step 2 of 5', self.Setup.blocking_step_label(answers))
+        answers = self._answers(mailboxes=False)
+        self.assertEqual(self.Setup.blocking_step(answers)[:2], (5, 'mailboxes'))
 
     def test_every_step_is_mandatory(self):
         """Each one on its own is enough to hold the whole phase back, and the
         status names that step rather than a generic "not configured"."""
-        for index, (code, label) in enumerate(pan_mail_setup.STEPS, start=2):
+        for code, label in pan_mail_setup.STEPS:
+            index = pan_mail_setup.PAGE_NUMBER[code]
             answers = self._answers(**{code: False})
             self.assertEqual(self.Setup.phase(answers), pan_mail_setup.PHASE_SETUP,
                              f'missing {code} must keep the module in setup')

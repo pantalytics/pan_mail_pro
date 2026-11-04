@@ -82,8 +82,8 @@ class PanMailDomain(models.Model):
         string='Domain',
         required=True,
         index=True,
-        help='A domain your company owns, e.g. company.com. Mail between these '
-             'domains is never synced into Odoo.',
+        help='A domain your company owns, like company.com. Email between your '
+             'domains stays out of Odoo.',
     )
 
     _name_unique = Constraint(
