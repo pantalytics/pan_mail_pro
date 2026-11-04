@@ -203,7 +203,7 @@ view rather than a patched component:
 | Subject or sender | the first field, so Enter searches it: `subject` or `email_from` |
 | Contact, From | `author_id`, `email_from`, each with Odoo's own autocomplete |
 | Unread | `x_is_read = False`, the mailbox's own read state (§9.18) |
-| On a contact only | `model = res.partner` |
+| Linked to a contact | `model = res.partner` |
 | Linked to nothing | `model = False`, and `pan_mail_ungrouped` in its context |
 | Date | Odoo's standard month / quarter / year filter |
 
@@ -235,14 +235,14 @@ tour framework rather than an overlay of ours: a tour in the
 |---|---|---|
 | 1 | The Odoo record pane's head | Every conversation sits on an Odoo record. Your reply lands in its chatter. |
 | 2 | Change link, beside the Linked-to chip | Wrong record? Link it to another one. The rest of the conversation follows. |
-| 3 | The filter menu on the search bar | Mail that matched no record lands on the sender's contact. Find it under **On a contact only**. |
+| 3 | The filter menu on the search bar | Mail that matched no other record is linked to the sender's contact. Find it under **Linked to a contact**. |
 | 4 | The search box | Search this folder by sender, subject or a word in the mail. |
 
 Each sentence was checked against the code it describes. The reply is a
 `message_post` on the conversation's record. `link_to` moves the whole
 conversation and repoints its thread link, so the next mail follows; it is for
-mailbox managers, and so is step 2. Mail the matcher could not place lands on
-the sender's contact (§3), which is a filter in the search view and not a
+mailbox managers, and so is step 2. Mail the matcher could not place is linked
+to the sender's contact (§3), which is a filter in the search view and not a
 folder. The search view searches sender, subject, contact and body within the
 open folder, and never the record.
 
@@ -2097,15 +2097,24 @@ which is the only part of triage that compounds. The inbox says so in those
 words when it confirms.
 
 The word is **linked**, everywhere: the chip row reads `Linked to`, the search
-bar's own filter says `Linked to nothing`, and the report in §7 is called link coverage.
+bar's own filters say `Linked to a contact` and `Linked to nothing`, and the
+report in §7 is called link coverage.
+
+**A contact is a record** (#422). A conversation on one is linked, to it: the
+chip row says `Linked to <contact>` the same way it says `Linked to <quote>`,
+and only a conversation on no record at all reads `Linked to nothing yet`. The
+coverage report still counts mail on a contact apart from mail linked to a
+document, because that number is the matcher's and not the screen's; the code
+names (`link_to`, `contact_only`) stay as they are.
 "Filed" was the technical word for the same idea and it was the only place the
 vocabulary drifted.
 
 The surface is the inbox, not this log. Settings → Technical is where you go
 to ask why; the screen where mail is read is where it gets fixed. A thread
-that is linked carries a quiet `Change link` next to its chips; one that is not
-carries the suggestion (rule 5, or the best proposal any rule made) with a
-`Link it here`, and a `Link to a record`. Both open the same picker, in two
+that is linked carries a quiet `Change link` next to its chips; one that is
+linked to its contact can also carry the suggestion (rule 5, or the best
+proposal any rule made), worded as a choice: `Link it to <record> instead?`
+and `Link it there`. One linked to nothing has a `Link to a record`. Both open the same picker, in two
 steps: a short list of the kinds of record, then Odoo's own record picker.
 
 **Step one, the kind of record.** `link_targets(search, current_model,
@@ -2123,14 +2132,13 @@ mostly "the other quote of the same customer", and that row costs one click.
 Whether it is mostly that is not known yet, so `conversation_linked` carries a
 `same_model` boolean (never the model) and the answer decides later whether
 step one should be skipped. Then, on a conversation that is on something other
-than its contact, **Only <contact>**: the unlink. It skips step two and calls
+than its contact, **Unlink, back to <contact>**. It skips step two and calls
 `link_to` with the contact, because "this belongs on no record" cannot mean
 *nothing* — a message with no model is readable by its author and nobody else
-— and the contact is where the fetcher lands unmatched mail, so it is the state
-the "On a contact only" folder, the coverage report and the suggestion already
-call unlinked. The thread link follows, the same as any other link. On a
-contact there is nothing to unlink and the row is absent; so is it without a
-contact to go back to.
+— and the contact is where the fetcher puts mail it could not place, the mail
+the Linked to a contact filter shows. The thread link follows, the same as any
+other link. On a contact there is nothing to unlink to and the row is absent;
+so is it without a contact to go back to.
 
 **Step two, the record.** Odoo's own `SelectCreateDialog` over the model's list
 view: the search bar, the filters, the columns and the paging every many2one
@@ -3561,7 +3569,7 @@ reader may open the document a mail is on, and the Inbox adds one clause in
 front of it (`pan.mail.conversation._whose_domain`, on every query the
 screen makes): a colleague's **personal** mailbox shows only its *linked*
 mail. The owner sees the whole of what the sync imported from their own
-mailbox, the mail on a contact only included; everyone else sees the mail
+mailbox, the mail linked to its contact included; everyone else sees the mail
 of it that is linked to a record, and then only on the records they may
 open. Without that clause the fallback home of an unplaced mail, the
 sender's contact, put every unlinked mail of every personal mailbox on

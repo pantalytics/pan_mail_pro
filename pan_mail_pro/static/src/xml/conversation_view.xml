@@ -1375,9 +1375,12 @@
             unlinked one, because the case it matters most
             in is not "linked to nothing" but "linked to
             the contact": delivered, and to a place nobody is
-            looking. A conversation with a real record never
-            carries one, because the server only records
-            a suggestion when the mail went somewhere else.
+            looking. A contact is a record, so the chips above
+            say "Linked to <contact>" and this offers the other
+            record as a choice, "instead" (#422). A
+            conversation on a quote or a ticket never carries
+            one, because the server only records a suggestion
+            when the mail went somewhere else.
 
             One suggestion, never a list. Five
             possibilities hand the matching back to the
@@ -1389,16 +1392,17 @@
         <div t-if="this.state.conversation.suggestion"
              class="o_mailpro_suggestion d-flex align-items-center flex-wrap gap-2">
             <span class="o_mailpro_suggestion_text">
-                Looks like
+                Link it to
                 <strong t-esc="this.state.conversation.suggestion.name"/>
+                instead?
             </span>
             <span class="o_mailpro_muted" t-esc="this.state.conversation.suggestion.reason"/>
             <button type="button" class="btn btn-secondary btn-sm"
-                    t-on-click="() => this.acceptSuggestion()">Link it here</button>
+                    t-on-click="() => this.acceptSuggestion()">Link it there</button>
         </div>
         <div t-if="!this.state.conversation.records.length" class="o_mailpro_unlinked">
             <div class="d-flex align-items-center justify-content-between gap-2">
-                <span class="o_mailpro_unlinked_title">Not linked to a record yet.</span>
+                <span class="o_mailpro_unlinked_title">Linked to nothing yet.</span>
                 <button t-if="this.state.conversation.rejected.length"
                         type="button" class="btn btn-link btn-sm p-0"
                         t-att-aria-expanded="this.state.showRejected ? 'true' : 'false'"

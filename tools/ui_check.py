@@ -1145,8 +1145,8 @@ class Checks:
     TOUR_SAYS = {
         'record': 'Every conversation sits on an Odoo record. Your reply lands in its chatter.',
         'link': 'Wrong record? Link it to another one. The rest of the conversation follows.',
-        'contact': "Mail that matched no record lands on the sender's contact. "
-                   'Find it under On a contact only.',
+        'contact': "Mail that matched no other record is linked to the sender's contact. "
+                   'Find it under Linked to a contact.',
         'search': 'Search this folder by sender, subject or a word in the mail.',
     }
     TOUR_RECORD = '.o_mailpro_odoo_record:not(.o_mailpro_folded) .o_mailpro_odoo_record_head'
@@ -1405,7 +1405,7 @@ class Checks:
     # The two everyday questions -- have I read it, is it in Odoo -- come
     # first; the triage filters sit under them.
     FILTERS = ('Unread', 'Read', 'Not in Odoo', 'In Odoo', 'Flagged',
-               'On a contact only', 'Linked to nothing', 'Date')
+               'Linked to a contact', 'Linked to nothing', 'Date')
 
     def conversation_view(self):
         """The Inbox renders four panes with real mail in them.
@@ -2168,7 +2168,7 @@ class Checks:
 
         - the four panes are drawn before the list has answered;
         - the list shows its skeleton, and the conversation pane its own,
-          never "Not linked to a record yet" over a conversation that may be;
+          never "Linked to nothing yet" over a conversation that may be linked;
         - a second click while the first read is out ends on the second;
         - a folder switch dims the old list instead of blanking it;
         - an answer inside 150ms shows no skeleton at all.
@@ -2695,18 +2695,22 @@ class Checks:
         that works over RPC and leaves the screen showing the old state is a
         bug a green Python suite cannot see.
 
-        "On a contact only" is the filter this works from, not "Linked to
-        nothing". A mail the ladder could not place still lands somewhere, and
-        the contact is where -- delivered, to a place nobody is looking, which
-        is the whole reason the filter exists.
+        "Linked to a contact" is the filter this works from, not "Linked to
+        nothing". A mail the ladder could not place is still linked to
+        something, and the contact is what -- delivered, to a place nobody is
+        looking, which is the whole reason the filter exists.
+
+        A contact is a record (#422), so the conversation reads "Linked to
+        <contact>" like any other, never "not linked", and the suggestion is
+        a choice: link it to the other record instead.
         """
         page = self.page
         page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
         page.wait_for_timeout(800)
         pill = page.query_selector(
-            '.o_filter_menu .o_menu_item:text-is("On a contact only")')
+            '.o_filter_menu .o_menu_item:text-is("Linked to a contact")')
         if not pill:
-            self.fail('there is no "On a contact only" filter to link from')
+            self.fail('there is no "Linked to a contact" filter to link from')
             return
         pill.click()
         page.wait_for_timeout(1500)
@@ -2720,6 +2724,18 @@ class Checks:
         items[0].click()
         page.wait_for_timeout(1500)
 
+        # Linked, to the contact: the chip row names it, and nothing on the
+        # pane says the conversation is not linked.
+        chips = ' '.join(el.inner_text() for el in page.query_selector_all(
+            '.o_mailpro_conversation .o_mailpro_chips'))
+        # Lower case: the label is drawn in capitals, and inner_text says so.
+        if 'linked to' not in chips.lower() or not any(
+                name in chips for name in ('Vandermolen', 'Keersluis')):
+            self.fail(f'a conversation on a contact does not read "Linked to <contact>": {chips!r}')
+        unlinked = page.query_selector('.o_mailpro_conversation .o_mailpro_unlinked_title')
+        if unlinked:
+            self.fail(f'a conversation on a contact says "{unlinked.inner_text()}"')
+
         # One suggestion. A list here would be the triage queue coming back in
         # another shape, asking the reader to do the matching we could not.
         suggestions = page.query_selector_all('.o_mailpro_suggestion')
@@ -2729,6 +2745,8 @@ class Checks:
         text = suggestions[0].inner_text()
         if 'Asafdichtingen' not in text:
             self.fail(f'the suggestion reads "{text}" and does not name the record')
+        if 'instead' not in text:
+            self.fail(f'the suggestion is not offered as a choice: "{text}"')
         # The confidence is a number for the routing log, not for this screen.
         if '%' in text or '0.6' in text:
             self.fail(f'the suggestion shows a score: "{text}"')
