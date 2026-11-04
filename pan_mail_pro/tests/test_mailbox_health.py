@@ -93,7 +93,8 @@ class TestMailboxHealth(MailProTestCase):
         self._refresh(mailbox)
         self.assertEqual(mailbox.health_status, 'error')
         self.assertEqual(mailbox.status_message,
-                         'sales@company.test is an alias on another mailbox.')
+                         'sales@company.test is an alias on another mailbox. '
+                         'Use the address of a real mailbox.')
 
     def test_an_owner_who_cannot_read_their_mailbox_is_an_error(self):
         mailbox = self.personal_mailbox
@@ -153,7 +154,7 @@ class TestMailboxHealth(MailProTestCase):
                                 'error': None})
         state, sentence = self.Setup.notification_mailbox_verified()
         self.assertEqual(state, 'open')
-        self.assertIn('Not yet sent from', sentence)
+        self.assertEqual(sentence, 'Not yet sent from. It turns green after the first email.')
         self.Access.note_send(self.notification_mailbox, self.owner_account, True)
         self.assertEqual(self.Setup.notification_mailbox_verified(), ('ok', ''))
 

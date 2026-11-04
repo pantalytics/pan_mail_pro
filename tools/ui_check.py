@@ -4445,11 +4445,12 @@ class Checks:
 
     def step5_personal_notification(self):
         """A personal mailbox carrying the system email (#387): step 5 amber
-        with one line, the Mailboxes list it opens offering to create a
-        shared mailbox at Microsoft (no Show me while that slot is empty),
-        the mailbox's own Sync settings still there, and green again once a
-        shared mailbox carries the flag. The seed's two stopped mailboxes are
-        set going for the walk, so the page is the one a working setup sees."""
+        with one line, the Mailboxes list it opens with no way to create a
+        shared mailbox at Microsoft (#417), the mailbox's own sync level still
+        there, and green again once a shared mailbox carries the flag. The
+        seed's two stopped mailboxes are set going for the walk, or step 4
+        would be the red of broken. On the form (#420) the personal mailbox
+        names no owner and the shared one does, as a plain field."""
         page = self.page
         mailboxes = self.call('pan.mail.mailbox', 'search_read', [],
                               fields=['email', 'state', 'is_notification_mailbox',
@@ -4486,21 +4487,21 @@ class Checks:
             self.click_row(step)
             page.wait_for_selector('.o_list_view', timeout=30000)
             page.wait_for_timeout(1200)
-            self.shot('mailboxes-create-shared.png')
-            create = page.query_selector('a.o_mailpro_create_shared')
-            if not create or not create.is_visible():
-                self.fail('the Mailboxes list offers no "Create a shared mailbox"')
-            else:
-                if create.get_attribute('href') != 'https://admin.microsoft.com/#/SharedMailbox':
-                    self.fail(f'"Create a shared mailbox" goes to {create.get_attribute("href")}')
-                if create.get_attribute('target') != '_blank':
-                    self.fail('"Create a shared mailbox" does not open a new tab')
-            if page.query_selector('.o_mailpro_show_me'):
-                self.fail('"Show me" is there while its slot is empty')
+            if page.query_selector('a.o_mailpro_create_shared, .o_mailpro_show_me'):
+                self.fail('the Mailboxes list still offers "Create a shared mailbox" (#417)')
             action = dict(module_menu_actions(self.call)).get('Mailboxes')
             self.form_text(f'{self.base}/odoo/action-{action}/{carrier["id"]}')
-            if not page.query_selector('.o_notebook .nav-link:has-text("Sync settings")'):
-                self.fail('the notification mailbox hides its Sync settings')
+            if not page.query_selector('.o_form_view .o_field_widget[name="sync_level"]'):
+                self.fail('the notification mailbox hides its sync level')
+            owner = '.o_form_view .o_field_widget[name="owner_user_id"]'
+            if page.query_selector(owner):
+                self.fail('the personal mailbox shows its owner')
+            self.form_text(f'{self.base}/odoo/action-{action}/{shared["id"]}')
+            if not page.query_selector(owner):
+                self.fail('the shared mailbox does not show its owner')
+            page.goto(f'{self.base}/odoo/action-{action}/{carrier["id"]}',
+                      wait_until='domcontentloaded')
+            page.wait_for_selector('.o_form_view', timeout=30000)
             self.shot('mailbox-notification-sync.png')
 
             self.call('pan.mail.mailbox', 'write', [shared['id']],
@@ -4510,11 +4511,6 @@ class Checks:
                 self.fail('step 5 stays amber once a shared mailbox carries the system email')
             if 'System email from a personal mailbox' in msgs:
                 self.fail('step 5 still says personal once a shared mailbox carries it')
-            page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
-            page.wait_for_selector('.o_list_view', timeout=30000)
-            page.wait_for_timeout(1000)
-            if page.query_selector('a.o_mailpro_create_shared'):
-                self.fail('"Create a shared mailbox" stays once a shared one carries the flag')
         finally:
             self.call('pan.mail.mailbox', 'write', [carrier['id']],
                       {'is_notification_mailbox': True})
@@ -4666,19 +4662,16 @@ class Checks:
             if 'Last checked' not in text:
                 self.fail('the mailbox form does not say when it was last checked')
 
-            # Setup is a flow: two step lines, then one card of settings. The
-            # test step says whether it works, never as a table.
-            self.page.click('.o_notebook .nav-link:has-text("Setup")')
-            self.page.wait_for_timeout(600)
-            self.shot('mailbox-setup.png')
-            steps = len(self.page.query_selector_all('.o_form_view .o_mailpro_step'))
-            if steps != 2:
-                self.fail(f'the Setup tab draws {steps} steps, expected 2')
-            if self.page.query_selector('.o_mailpro_step table'):
-                self.fail('the test step shows a table instead of an answer')
-            # Not checked yet, so the check step offers the check.
-            if not self.page.query_selector('.o_mailpro_step button.btn-primary:has-text("Check mailbox")'):
-                self.fail('an unchecked mailbox does not offer "Check mailbox"')
+            # One page (#420): no tabs, no setup steps, and nothing that asks
+            # the reader to check the mailbox.
+            self.shot('mailbox-form.png')
+            if self.page.query_selector('.o_form_view .o_notebook'):
+                self.fail('the mailbox form still has tabs')
+            if self.page.query_selector('.o_form_view .o_mailpro_step'):
+                self.fail('the mailbox form still draws setup steps')
+            for gone in ('Check mailbox', 'Not tested'):
+                if gone in text:
+                    self.fail(f'the mailbox form still says "{gone}"')
             if 'Last synced' in text:
                 self.fail('the form still labels the fetch cursor "Last synced"')
 
@@ -5381,17 +5374,22 @@ class Checks:
 
     # The four stops, their names under the slider and the full labels a
     # screen reader hears (`sync_level`'s selection).
-    SYNC_STOPS = ('Replies', '+ Sent Items', '+ known contacts', '+ new contacts')
-    SYNC_LABELS = ('Replies', 'Replies and Sent Items',
-                   'Replies, Sent Items and known contacts',
-                   'Replies, Sent Items, known and new contacts')
+    SYNC_STOPS = ('Replies', '+ sent replies', '+ existing contacts', '+ new contacts')
+    SYNC_LABELS = ('Replies', 'Received and sent replies',
+                   'Replies and existing contacts',
+                   'Replies, existing and new contacts')
+    # The grid's rows in screen order, receiving then sending (#419): the
+    # first stop at which each is in Odoo, None for the one no stop brings in.
+    SYNC_GROUPS = ('Receiving', 'Sending')
+    SYNC_ROWS = (0, 2, 3, 1, None)
 
     def sync_slider_walk(self, page, scope, field, where, shots=None):
         """Click every stop of the sync level slider under `scope` and read
-        the grid back: the mail app column always on, the Odoo column on for
-        rows 0..stop, the row a stop adds marked for a moment, the full label
-        in `aria-valuetext`. Then the arrows, and each row's info dot opening
-        and closing its line. Leaves the slider on the last stop.
+        the grid back: the intro above the slider, the two groups, one In
+        Odoo column on for the rows the stop brings in (`SYNC_ROWS`), the row
+        a stop adds marked for a moment, the full label in `aria-valuetext`,
+        the line under the grid. Then the arrows, and each row's info dot
+        opening and closing its line. Leaves the slider on the last stop.
 
         `shots` maps a stop to a screenshot name, taken of the widget's row.
         Returns False when the slider is not there at all.
@@ -5404,6 +5402,40 @@ class Checks:
             return False
         if page.query_selector(f'{scope} .o_field_widget[name="{field}"] .o_radio_input'):
             self.fail(f'{where}: the sync level is still a radio')
+
+        # The words around the grid: the intro above the slider, one column
+        # head, the two group headings, the line under it (#419).
+        words = page.evaluate("""(root) => {
+            const el = document.querySelector(root);
+            const intro = el.querySelector('.o_mailpro_sync_intro');
+            const slider = el.querySelector('.o_mailpro_sync_slider');
+            const never = el.querySelector('.o_mailpro_sync_never');
+            const grid = el.querySelector('.o_mailpro_sync_grid');
+            const text = (n) => (n ? n.textContent.trim() : '');
+            return {
+                intro: text(intro),
+                introFirst: !!(intro && slider && (intro.compareDocumentPosition(slider)
+                    & Node.DOCUMENT_POSITION_FOLLOWING)),
+                cols: [...el.querySelectorAll('thead th')].map(text),
+                groups: [...el.querySelectorAll('.o_mailpro_sync_heading')].map(text),
+                never: text(never),
+                neverLast: !!(never && grid && (grid.compareDocumentPosition(never)
+                    & Node.DOCUMENT_POSITION_FOLLOWING)),
+            };
+        }""", root)
+        if not words['intro'].startswith('Mail Pro links each conversation') \
+                or not words['introFirst']:
+            self.fail(f'{where}: no intro above the slider ({words["intro"][:60]!r})')
+        if words['cols'] != ['In Odoo']:
+            self.fail(f'{where}: the grid\'s columns read {words["cols"]}, expected one, In Odoo')
+        if tuple(words['groups']) != self.SYNC_GROUPS:
+            self.fail(f'{where}: the grid\'s groups read {words["groups"]}')
+        if 'Block Email Sync' not in words['never'] or not words['neverLast']:
+            self.fail(f'{where}: no line under the grid on what never comes in')
+        text = page.inner_text(root).lower()
+        for vague in ('lands on', 'goes on', 'sent items'):
+            if vague in text:
+                self.fail(f'{where}: the slider still says "{vague}"')
 
         # Each name under its own stop, on one line, none over its neighbour.
         geometry = page.evaluate("""(root) => {
@@ -5444,8 +5476,8 @@ class Checks:
                 return {
                     value: input.value,
                     text: input.getAttribute('aria-valuetext'),
-                    app: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
-                        (r) => !!r.querySelector('.o_mailpro_sync_app .o_mailpro_sync_on')),
+                    rows: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
+                        (r) => r.dataset.row),
                     odoo: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
                         (r) => !!r.querySelector('.o_mailpro_sync_odoo .o_mailpro_sync_on')),
                     flash: [...el.querySelectorAll('.o_mailpro_sync_row')].map(
@@ -5468,11 +5500,11 @@ class Checks:
                 self.fail(f'{where}: {why}, the slider is at {state["value"]}, expected {stop}')
             if state['text'] != self.SYNC_LABELS[stop]:
                 self.fail(f'{where}: {why}, aria-valuetext is {state["text"]!r}')
-            if state['app'] != [True] * 4:
-                self.fail(f'{where}: {why}, the mail app column reads {state["app"]}')
-            wanted = [row <= stop for row in range(4)]
+            if state['rows'] != [str(row) for row in range(len(self.SYNC_ROWS))]:
+                self.fail(f'{where}: {why}, the rows are {state["rows"]}')
+            wanted = [first is not None and stop >= first for first in self.SYNC_ROWS]
             if state['odoo'] != wanted:
-                self.fail(f'{where}: {why}, the Odoo column reads {state["odoo"]}, '
+                self.fail(f'{where}: {why}, the In Odoo column reads {state["odoo"]}, '
                           f'expected {wanted}')
             return state
 
@@ -5483,7 +5515,7 @@ class Checks:
             page.click(f'{root} .o_mailpro_sync_stop[data-stop="{stop}"]')
             state = expect(stop, f'after clicking "{self.SYNC_STOPS[stop]}"')
             # The row this stop adds is the one that is marked, and only it.
-            if stop and state['flash'] != [row == stop for row in range(4)]:
+            if stop and state['flash'] != [first == stop for first in self.SYNC_ROWS]:
                 self.fail(f'{where}: moving to stop {stop} marked rows {state["flash"]}')
             page.wait_for_timeout(500)
             if shots and stop in shots and self.out:
@@ -5505,7 +5537,7 @@ class Checks:
             self.fail(f'{where}: the slider loses focus to the arrows')
 
         # Every row's info dot opens one muted line and closes it again.
-        for row in range(4):
+        for row in range(len(self.SYNC_ROWS)):
             dot = f'{root} .o_mailpro_sync_row[data-row="{row}"] .o_mailpro_sync_info'
             line = f'{root} .o_mailpro_sync_row[data-row="{row}"] .o_mailpro_sync_detail'
             page.click(dot)
@@ -5513,6 +5545,9 @@ class Checks:
             if page.get_attribute(dot, 'aria-expanded') != 'true' \
                     or not page.is_visible(line) or len(page.inner_text(line)) < 20:
                 self.fail(f'{where}: the info dot of row {row} does not open its line')
+            elif 'link' not in page.inner_text(line):
+                self.fail(f'{where}: row {row}\'s line does not say which record '
+                          'Mail Pro links the conversation to')
             page.click(dot)
             page.wait_for_timeout(150)
             if page.get_attribute(dot, 'aria-expanded') != 'false' or page.query_selector(line):
@@ -5520,8 +5555,8 @@ class Checks:
         return True
 
     def sync_slider(self):
-        """The sync level on the mailbox form is a slider over what lands
-        where (#390), in light and in dark.
+        """The sync level on the mailbox form is a slider over what reaches
+        Odoo (#390, #419), in light and in dark.
 
         Every stop is clicked and the grid read back, the widest is saved and
         lands on the row, and in dark mode every line of it, each row's
@@ -5540,8 +5575,8 @@ class Checks:
         page = self.page
         try:
             page.goto(url, wait_until='domcontentloaded')
-            page.wait_for_selector('.o_form_view .o_notebook', timeout=30000)
-            page.click('.o_notebook .nav-link:has-text("Sync settings")')
+            page.wait_for_selector('.o_form_view .o_field_widget[name="sync_level"]',
+                                   timeout=30000)
             page.wait_for_timeout(600)
             if not self.sync_slider_walk(
                     page, '.o_form_view', 'sync_level', 'the mailbox form',
@@ -5549,7 +5584,7 @@ class Checks:
                            3: 'sync-slider-stop3-light.png'}):
                 return
             self.shot('mailbox-sync-slider.png')
-            if 'newsletters' not in page.inner_text('.o_form_view .o_notebook'):
+            if 'newsletters' not in page.inner_text('.o_form_view .o_form_sheet'):
                 self.fail('the widest stop is picked without saying what it lets in')
             page.click('.o_form_button_save')
             page.wait_for_timeout(1500)
@@ -5571,8 +5606,6 @@ class Checks:
         try:
             login(dark, self.base)
             dark.goto(url, wait_until='domcontentloaded')
-            dark.wait_for_selector('.o_form_view .o_notebook', timeout=30000)
-            dark.click('.o_notebook .nav-link:has-text("Sync settings")')
             dark.wait_for_selector(f'{root} .o_mailpro_sync_level', timeout=15000)
             scheme = dark.evaluate("() => getComputedStyle(document.documentElement)"
                                    ".getPropertyValue('--o-webclient-color-scheme').trim()")

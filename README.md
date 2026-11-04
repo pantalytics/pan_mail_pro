@@ -29,11 +29,12 @@ https://github.com/user-attachments/assets/91bb494e-696d-4ede-85b5-4ac5cc826e5c
 
 **Incoming Email:**
 - Automatic sync from every configured mailbox (1 min interval)
-- Replies to mail Odoo sent always land on their record, with no setting
+- Replies in a conversation that is already in Odoo always come in, on the
+  record the conversation is linked to, with no setting
 - One **sync level** per mailbox, each keeping strictly more than the one
-  above: replies only; also your own replies, read back from the Sent folder;
-  also new email from existing contacts; also new email from everyone, who
-  then become contacts
+  above: replies only; also your own replies from your mail app; also new
+  conversations from existing contacts; also new conversations from new
+  contacts, whom Mail Pro adds as contacts
 - Reply threading: our own headers, then the References chain, then the
   provider's thread id, then subject and participants as a suggestion
 - Historical email sync with configurable start date
@@ -151,8 +152,7 @@ straight on the consent screen.
 Until you connect, a banner sits above every screen with a button that goes
 straight to the consent screen. It is only shown where that button would work:
 an internal user, a provider that has a consent screen, and not on a staging
-copy. Once connected there is nothing left to do: the address sends. An
-administrator who wants proof has **Send Test Email** on every mailbox form.
+copy. Once connected there is nothing left to do: the address sends.
 
 **Note:** until your account is connected and a default mailbox is set, the
 email composer shows a warning banner saying so.
@@ -195,17 +195,17 @@ is picked per message, under **Send From** in the composer, and it shows up in
 the Sent Items of your mail app like any other mail.
 
 1. Open a mailbox, tab **Sync Settings**
-2. Move the **Sync level** slider. Each stop keeps strictly more than the one before it, and the grid under the slider shows what lands on the Odoo record:
+2. Move the **Sync level** slider. Each stop keeps strictly more than the one before it, and the grid under the slider shows which emails Mail Pro brings into Odoo:
 
-   | Level | What is read back |
+   | Level | What comes into Odoo |
    |---|---|
-   | **Replies** (default) | Only replies to mail Odoo sent |
-   | **Replies and Sent Items** | Also your own replies, read back from Sent Items |
-   | **Replies, Sent Items and known contacts** | Also new conversations started by people who are already contacts |
-   | **Replies, Sent Items, known and new contacts** | Also new conversations from new contacts, who become contacts. Newsletters and private email included, so pick it only for an address that exists to hear from new contacts |
+   | **Replies** (default) | Only replies in conversations that are already in Odoo |
+   | **Received and sent replies** | Also your own replies from your mail app |
+   | **Replies and existing contacts** | Also new conversations from people who are already contacts |
+   | **Replies, existing and new contacts** | Also new conversations from new contacts, whom Mail Pro adds as contacts. Newsletters and private email included, so pick it only for an address that exists to hear from new contacts |
 
-   Mail you start from your own mail app never enters, whatever the level:
-   only your replies do.
+   A new conversation you start in your mail app never comes into Odoo,
+   whatever the level. Only your replies do.
 3. From the third level on, optionally **route new conversations to a team**
    (alias) so they create tickets or leads instead of landing on the sender's
    contact
