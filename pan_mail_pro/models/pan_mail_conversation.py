@@ -236,10 +236,11 @@ class PanMailConversation(models.AbstractModel):
         the sender's contact, and a contact is readable by every internal
         user -- so under that rule alone, every unplaced mail in a personal
         mailbox was on screen for every mailbox manager in the company. That
-        is the opposite of what the screen promises: a mail on a contact only
-        is the unlinked state everywhere else in this module (the folder, the
-        coverage report, the suggestion), and an unlinked mail in somebody
-        else's mailbox is theirs to read, not yours.
+        is the opposite of what the screen promises: a mail linked to its
+        contact is the one the matcher could not place (the Linked to a
+        contact filter, the coverage report, the suggestion), and mail
+        nobody has placed in somebody else's mailbox is theirs to read, not
+        yours.
 
         So the owner of a personal mailbox sees the whole of what the sync
         imported from it, the unlinked mail included. Everyone else sees the
@@ -2045,11 +2046,13 @@ class PanMailConversation(models.AbstractModel):
         marked as such, because a correction from a real record is mostly
         "the other quote of the same customer" and that row should cost one
         click. Then, on a conversation that is on something other than its
-        contact, an **unlink** row: *Only <contact>*, which skips step two and
-        moves the conversation back to the contact. Not to nothing -- a
-        message with no model is readable by its author and nobody else -- but
-        to the fallback state the rest of the module already calls unlinked:
-        the "On a contact only" folder, the coverage report, the suggestion.
+        contact, an **unlink** row: *Unlink, back to <contact>*, which skips
+        step two and links the conversation back to the contact. Not to
+        nothing -- a message with no model is readable by its author and
+        nobody else -- but to where the fetcher puts mail it could not place.
+        A contact is a record, so on screen that conversation is "Linked to
+        <contact>" and the filter is Linked to a contact (#422); the coverage
+        report still counts it apart from mail linked to a document.
         Neither row shows under a search: a search is a question about the
         rest of the list.
         """
@@ -2076,11 +2079,11 @@ class PanMailConversation(models.AbstractModel):
         return self._link_target_rows(ordered)
 
     def _unlink_row(self, current_model, partner_id):
-        """The way back to the contact, or nothing.
+        """Unlink: the way back to the contact, or nothing.
 
-        Nothing on a conversation that is on a contact already (there is
-        nothing to unlink) and nothing without a contact to go back to: the
-        option is absent rather than refused. The row carries a `res_id`,
+        Nothing on a conversation that is linked to a contact already (there
+        is nothing to unlink to) and nothing without a contact to go back
+        to: the option is absent rather than refused. The row carries a `res_id`,
         which is what tells the client it answers both steps at once.
         """
         if not partner_id or not current_model or current_model == 'res.partner':
@@ -2091,7 +2094,7 @@ class PanMailConversation(models.AbstractModel):
         return {
             'model': 'res.partner',
             'res_id': partner.id,
-            'label': _("Only %s", partner.display_name),
+            'label': _("Unlink, back to %s", partner.display_name),
             'icon': self._model_icon('res.partner'),
             'unlink': True,
         }

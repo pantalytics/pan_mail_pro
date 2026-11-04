@@ -162,6 +162,27 @@ class TestConversationApi(TransactionCase):
         self.assertEqual(names, ['unread', 'read', 'not_in_odoo', 'in_odoo',
                                  'flagged', 'on_contact', 'unlinked', 'date'])
 
+    def test_a_conversation_on_a_contact_is_linked_to_it(self):
+        """A contact is a record (#422), so mail on one is linked, to it.
+
+        The chip row the Inbox draws "Linked to" over names the contact, the
+        matcher's turned-down candidates (the "Why?" under "Linked to nothing
+        yet") are not read for it, and the filter that shows this mail says
+        so in the same words.
+        """
+        message = self._mail(record=self.customer, subject='Only on the contact')
+        thread = self.Conversation.read_conversation('res.partner', self.customer.id)
+        self.assertIn(message.id, [m['id'] for m in thread['messages']])
+        self.assertEqual([(row['model'], row['res_id']) for row in thread['records']],
+                         [('res.partner', self.customer.id)])
+        self.assertEqual(thread['records'][0]['name'], self.customer.display_name)
+        self.assertEqual(thread['rejected'], [])
+
+        view = self.env.ref('pan_mail_pro.view_pan_mail_inbox_search')
+        on_contact = etree.fromstring(view.arch).find(".//filter[@name='on_contact']")
+        self.assertEqual(on_contact.get('string'), 'Linked to a contact')
+        self.assertEqual(on_contact.get('domain'), "[('model', '=', 'res.partner')]")
+
     def test_in_odoo_or_not_is_a_filter_the_live_read_can_hear(self):
         """Not in Odoo / In Odoo sit in the search bar, not in the list header.
 
@@ -985,8 +1006,8 @@ class TestConversationApi(TransactionCase):
     def test_a_colleague_s_mailbox_shows_its_linked_mail_and_nothing_else(self):
         """The rule, from the side of the person it keeps out.
 
-        A mail on a contact only is the unlinked state, and a contact is
-        readable by everyone, so Odoo's own rule showed every unplaced mail
+        A mail linked to its contact is one the matcher could not place, and a
+        contact is readable by everyone, so Odoo's own rule showed every unplaced mail
         of a colleague's mailbox to every manager. In somebody else's
         mailbox only the linked mail is on screen, on every door the Inbox
         has, and the counts beside the folders agree with the list.

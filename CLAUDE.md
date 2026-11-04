@@ -9,7 +9,8 @@ it".
 ## Module Overview
 
 **pan_mail_pro** - Microsoft 365, Google Workspace and IMAP/SMTP email
-integration for Odoo 19.0, Community or Enterprise.
+integration for Odoo 18.0, 19.0 and 20.0, Community or Enterprise (one
+branch per series, `main` is the source; docs/plans/multi-version.md).
 
 Send and receive emails via the Microsoft Graph API, the Gmail API (both OAuth
 2.0 delegated) or plain IMAP/SMTP with a server, login and password.
@@ -271,7 +272,7 @@ exist yet.
 |---|---|---|
 | URL | https://mailpro-dev.cloudpepper.site | https://mailpro-dev-20.cloudpepper.site |
 | Server | `Pantalytics Demo` (Odoo 19.0 **community**), shared with the demo instances | `Pantalytics Demo v20` (Odoo 20.0 **community**), shared with the two 20 demo instances |
-| Tracks | branch `19.0`: a push pulls the code and restarts Odoo. It has never run `-u` (issue #134), so a version bump lands via Apps → Mail Pro → Upgrade | branch `20.0`: webhook and auto-upgrade on since 2026-11-03 (first install `20.0.34.0.0`). Whether a push really runs `-u` here is not measured yet; assume #134 and upgrade via Apps after a bump |
+| Tracks | branch `19.0`: a push pulls the code and restarts Odoo. It has never run `-u` (issue #134), so a version bump lands via Apps → Mail Pro → Upgrade | branch `20.0`: webhook and auto-upgrade on since 2026-11-03, and measured that day: a push to `20.0` pulled nothing in four minutes (no webhook arrived), the dashboard's Update (`update_module_branch`) pulls and restarts, and `-u` does not run on it either, so #134 holds here too. After a bump: Update, then Apps → Mail Pro → Upgrade (`20.0.34.1.1` landed that way) |
 | Login | `admin` / secret `CLOUDPEPPER_MAILPRO_DEV_ADMIN_PASSWORD`, project `prod` in Bitwarden Secrets Manager | `admin` / secret `CLOUDPEPPER_MAILPRO_DEV_20_ADMIN_PASSWORD`, same project |
 | OAuth redirect URIs | registered at Azure and Google | not registered yet |
 

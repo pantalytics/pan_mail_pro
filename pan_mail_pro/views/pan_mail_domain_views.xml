@@ -23,10 +23,8 @@
                 Add your company's domains
             </p>
             <p>
-                Mail between these domains is never synced into Odoo. Until at
-                least one is here, no mailbox can be created and nothing is
-                fetched — without them Mail Pro cannot tell a colleague from a
-                customer.
+                Email between your domains stays out of Odoo. Add one before
+                you add a mailbox.
             </p>
         </field>
     </record>

@@ -1,8 +1,8 @@
 // The mailbox form, as the brand's overview page (brand.pantalytics.com/product-ui):
-// the address, one grey line that opens with its status, then the
-// rows. Depth from a 1px rule, never a shadow. Colour is only status; the
-// tabs and the slider keep the theme's own, so this form does not become the
-// one screen in Odoo that looks different from the rest.
+// the address, one grey line that opens with its status, then the rows on
+// one page, no tabs (#420). Depth from a 1px rule, never a shadow. Colour is
+// only status; the slider keeps the theme's own, so this form does not become
+// the one screen in Odoo that looks different from the rest.
 
 // Light and dark: Odoo compiles this file once per colour scheme, see the
 // palette at the top of conversation_view.scss.

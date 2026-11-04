@@ -401,7 +401,7 @@ export class ConversationView extends Component {
             stale: false,
             // The conversation pane is waiting for its read. Its own flag,
             // because the pane draws its skeleton instead of a body that
-            // does not belong to the row picked -- "Not linked to a record
+            // does not belong to the row picked -- "Linked to nothing
             // yet" over a conversation that is.
             conversationLoading: false,
             // Whether this Odoo is connected to a Pantalytics account. Until
@@ -3126,7 +3126,7 @@ export class ConversationView extends Component {
             return;
         }
         this.notification.add(
-            _t("Linked to %s. The next mail in this conversation lands there too.", linked.name),
+            _t("Linked to %s. New mail in this conversation is linked there too.", linked.name),
             { type: "success" }
         );
         // Which way the correction came: the one-click suggestion, the

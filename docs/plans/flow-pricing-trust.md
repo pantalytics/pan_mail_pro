@@ -133,7 +133,7 @@ cannot warn about it because Azure does not know what Odoo does with the copy.
 
 Someone connects their mailbox and picks "Replies only". A mailbox manager
 opens Settings → Mail Pro → Mailboxes, opens that person's personal mailbox and
-sets the sync level to "Replies, Sent Items, known and new contacts". From the next sync
+sets the sync level to "Replies, existing and new contacts". From the next sync
 run, every new conversation in that inbox is imported with the owner's own
 token. Whatever the matcher cannot place lands on the sender's contact card,
 which the whole company can read. The manager reads all of it in the Inbox.
