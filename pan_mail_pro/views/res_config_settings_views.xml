@@ -102,7 +102,7 @@
                                 <span class="o_mailpro_step_value" invisible="x_license_status not in ('invalid', 'revoked')">Disconnected</span>
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'not_connected'">
-                                Mail Pro runs on an Odoo instance that is connected to a Pantalytics account.
+                                Connect this Odoo to your Pantalytics account.
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'not_connected'">
                                 <button name="action_license_connect" type="object"
@@ -215,7 +215,7 @@
                                  better than any sentence could, and a hint that
                                  stays is the one people learn to skip. -->
                             <div class="o_mailpro_step_msg" invisible="x_setup_provider_done or x_setup_provider_needs_account">
-                                Where your company's email lives. Mail Pro sends and receives through it.
+                                Where your company's email lives.
                             </div>
                             <div class="o_mailpro_step_msg" invisible="not x_setup_provider_needs_account">
                                 Each IMAP/SMTP address is an account with its own server, login and password.

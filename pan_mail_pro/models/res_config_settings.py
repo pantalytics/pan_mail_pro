@@ -102,7 +102,7 @@ class ResConfigSettings(models.TransientModel):
     x_internal_domain_ids = fields.Many2many(
         'pan.mail.domain',
         string='Internal domains',
-        help='Your own email domains. Mail between them is never synced into Odoo.',
+        help='Your own email domains. Email between them stays out of Odoo.',
     )
     # The count, not the list: "3 domains". What can be suggested is on the
     # Internal domains list the arrow opens (`pan.mail.domain.action_add_suggested`).
@@ -174,8 +174,7 @@ class ResConfigSettings(models.TransientModel):
     x_improve_on = fields.Boolean(compute='_compute_license')
     x_improve_refused = fields.Boolean(
         config_parameter=IMPROVE_REFUSED_PARAM,
-        help='Refuse it for this Odoo instance, whatever the workspace decided. '
-             'Nothing is reported or recorded from this instance while this is ticked.',
+        help='Send nothing from this Odoo, whatever the workspace chose.',
     )
     # The toggle on the page. It reads the positive way round, so what is
     # stored is its inverse: off here is the refusal.
