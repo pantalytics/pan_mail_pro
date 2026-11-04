@@ -349,13 +349,15 @@ border, the way a phone's Settings app lists them.
   rather than a fill, because a setup page that opens in red reads as a product
   that is already failing.
 - **The answer is one word or one number, never a list.** The account line
-  reads `Connected`, the domains line `3 domains`, the mailboxes line
-  `4 mailboxes` -- not the plan and its dates, not `company.com, company.nl`,
-  not a row of tag chips. A list does not fit on a line and a count always
-  does; the list is one chevron away. Chips beside a bold heading look like
-  part of it, and the four lines stop matching.
-- **The answer sits at the end of the line, in grey.** Four names of
-  different lengths put four answers on one right edge, so the column of
+  reads the Pantalytics workspace's name (`Connected` when the answer names
+  none, #418), the domains line `3 domains`, the mailboxes line
+  `4 mailboxes`, the notification mailbox line its one address -- not the
+  plan and its dates, not `company.com, company.nl`, not a row of tag chips.
+  A list does not fit on a line and a count always does; the list is one
+  chevron away. Chips beside a bold heading look like part of it, and the
+  five lines stop matching.
+- **The answer sits at the end of the line, in grey.** Five names of
+  different lengths put five answers on one right edge, so the column of
   names stays a column without a fixed width. An answer too long for the
   line is cut with an ellipsis, never wrapped: the page behind the chevron
   holds the whole of it. In the mailbox's own setup flow, where the answer
@@ -367,7 +369,7 @@ border, the way a phone's Settings app lists them.
 - **A sentence goes under the name, never beside it.** The answer is short
   enough to sit on the first line; a fix or an alert is not. Beside the name a
   long one pushes the arrow off the line and turns the column of names ragged.
-- **The arrow goes to the data.** Steps 2 to 4 are tables — providers,
+- **The arrow goes to the data.** Steps 2 to 5 are tables — providers,
   domains, mailboxes — so every line links to the table rather than growing an
   editor of its own on this page. The settings page shows the answer; the
   table owns it. The provider used to be the one exception, opening its
@@ -424,19 +426,20 @@ border, the way a phone's Settings app lists them.
 
 ### The checklist has an end
 
-Four done steps and the first incoming mail on a record fold the checklist
-into one line, the way the platform's install screen ends (#391): a rocket,
-"Mail Pro is up and running", and under it the one next action, a primary
+Five done steps fold the checklist into one line, the way the platform's
+install screen ends (#391): a rocket, "Mail Pro is up and running", and under it the one next action, a primary
 button, Invite your colleagues to connect their mailbox, while anybody is
 left to invite, and beside it a secondary one, Take the tour, which opens
-the Inbox on its tour. Done is green, and amber on step 4: a personal mailbox
-carrying the system email is a recommendation, so step 4's own amber line,
+the Inbox on its tour. Done is green, and amber on step 5: a personal mailbox
+carrying the system email is a recommendation, so step 5's own amber line,
 System email from a personal mailbox, sits under the headline and opens
-Mailboxes. Red or the open dot keep the checklist. Show setup, a link, unfolds the four steps under it; the
+Mailboxes. Red or the open dot keep the checklist. Show setup, a link, unfolds the five steps under it; the
 fold is a click, held by the widget, never a field the settings form would
 ask to save. The confetti flies once per database and stands still under
 `prefers-reduced-motion`. No sentence explains any of it: the line is the
-explanation.
+explanation. The first mail is not a step (#415): the checklist is
+configuration only, and the Pantalytics app walks the person to that mail
+once the heartbeat says `setup.done`.
 
 ### Explanation is one muted line, never a tooltip
 
@@ -457,7 +460,7 @@ the name explains it better than any sentence, and the line goes away.
   Never for a control the reader has to understand before answering; the
   lint exempts this one switch by its label.
 - **A row in a picture may fold its line away.** The sync level grid
-  (#390) has four rows under a slider; four sentences under them would be
+  (#390) has five rows under a slider; five sentences under them would be
   the paragraph the picture replaces. Each row carries an info dot, a real
   button with `aria-expanded`, that unfolds its one muted line under the
   label and folds it again. Click, not hover, so it works on touch.

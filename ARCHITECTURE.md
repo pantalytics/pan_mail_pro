@@ -203,7 +203,7 @@ view rather than a patched component:
 | Subject or sender | the first field, so Enter searches it: `subject` or `email_from` |
 | Contact, From | `author_id`, `email_from`, each with Odoo's own autocomplete |
 | Unread | `x_is_read = False`, the mailbox's own read state (§9.18) |
-| On a contact only | `model = res.partner` |
+| Linked to a contact | `model = res.partner` |
 | Linked to nothing | `model = False`, and `pan_mail_ungrouped` in its context |
 | Date | Odoo's standard month / quarter / year filter |
 
@@ -235,14 +235,14 @@ tour framework rather than an overlay of ours: a tour in the
 |---|---|---|
 | 1 | The Odoo record pane's head | Every conversation sits on an Odoo record. Your reply lands in its chatter. |
 | 2 | Change link, beside the Linked-to chip | Wrong record? Link it to another one. The rest of the conversation follows. |
-| 3 | The filter menu on the search bar | Mail that matched no record lands on the sender's contact. Find it under **On a contact only**. |
+| 3 | The filter menu on the search bar | Mail that matched no other record is linked to the sender's contact. Find it under **Linked to a contact**. |
 | 4 | The search box | Search this folder by sender, subject or a word in the mail. |
 
 Each sentence was checked against the code it describes. The reply is a
 `message_post` on the conversation's record. `link_to` moves the whole
 conversation and repoints its thread link, so the next mail follows; it is for
-mailbox managers, and so is step 2. Mail the matcher could not place lands on
-the sender's contact (§3), which is a filter in the search view and not a
+mailbox managers, and so is step 2. Mail the matcher could not place is linked
+to the sender's contact (§3), which is a filter in the search view and not a
 folder. The search view searches sender, subject, contact and body within the
 open folder, and never the record.
 
@@ -449,9 +449,9 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 | `pan.mail.mailbox.access` | What one sign-in may do with one mailbox, as the provider last said: `can_read`, `can_send`, each yes / no / unknown, and the provider's own sentence for a refusal. One row per (mailbox, account), written by the access check and by the send path; read by health, the checklist and the heartbeat (§2 *Verified access*) |
 | `pan.mail.provider` | The application registration of the provider this database runs on. One row, and the default every new mailbox and account takes; has its own list under Settings → Technical → Email → Mail Pro. For Microsoft, `registration` says whose app: the Pantalytics app (default, nothing to register, §9.20) or the customer's own |
 | `pan.mail.domain` | One row per internal domain; the one definition of "is this address ours?". Has its own list under Settings → Technical → Email → Mail Pro |
-| `pan.mail.setup` | Setup steps 2 to 4 and the phase they add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
+| `pan.mail.setup` | Setup steps 2 to 5 and the phase three of them add up to (abstract). Step 1, the Pantalytics account, is `pan.mail.license` |
 | `pan.mail.license` | This database's link to a Pantalytics account: the pairing, the encrypted key, who connected and when, and the last signed entitlement. One row, created on the first Connect. `sync_allowed()` gates incoming sync and new accounts, `incoming_paused()` pauses incoming over the month's mails without a card (§9.17) |
-| `res.config.settings` | The setup checklist — four lines: the account, then three each a link to the table that answers it. Holds no credentials of its own |
+| `res.config.settings` | The setup checklist — five lines: the account, then four each a link to the table that answers it. Holds no credentials of its own |
 | `res.users` | Default mailbox + OAuth state; **no** token fields since 19.0.5.0.0 |
 | `res.partner` | Contact block list field (`x_email_sync_blocked`) |
 
@@ -1034,7 +1034,7 @@ pan_mail_pro/
 │   ├── pan_mail_provider.py       # The application registration: one row, no toggle (§9.13)
 │   ├── pan_mail_license.py        # The link to a Pantalytics account, the heartbeat, sync_allowed()
 │   ├── pan_mail_domain.py         # Internal domains + the fail-closed gate
-│   ├── pan_mail_setup.py          # Setup vs syncing: steps 2 to 4 of the checklist
+│   ├── pan_mail_setup.py          # Setup vs syncing: steps 2 to 5 of the checklist
 │   ├── pan_mail_fetcher.py        # Incoming processor (provider-neutral) + the gate ladder
 │   ├── pan_mail_matcher.py        # Thread matching rule ladder
 │   ├── pan_mail_thread_index.py   # pan.mail.message.ref + pan.mail.thread.link
@@ -1076,12 +1076,14 @@ condition of its own.
 
 | # | Step | Answered by |
 |---|------|-------------|
-| 1 | Pantalytics account | `pan.mail.license.sync_allowed()` — a gate of its own, not in `pan.mail.setup`, because its refusal names the state the link is in (§9.17). Steps 2 to 4 are hidden until it is answered |
+| 1 | Pantalytics account | `pan.mail.license.sync_allowed()` — a gate of its own, not in `pan.mail.setup`, because its refusal names the state the link is in (§9.17). Steps 2 to 5 are hidden until it is answered |
 | 2 | Email provider | the in-use `pan.mail.provider` row, with its application registration complete — or, for IMAP, its accounts |
 | 3 | Internal domains | at least one `pan.mail.domain` row |
-| 4 | Mailboxes | a mailbox with `is_notification_mailbox` ticked that can send |
+| 4 | Mailboxes | a dot, not a gate: one mailbox that is not stopped and has working credentials (`_has_working_credentials`) |
+| 5 | Notification mailbox | a mailbox with `is_notification_mailbox` ticked that can send |
 
-All four are mandatory. There is no partial service: while the phase is `setup`
+Steps 1, 2, 3 and 5 are mandatory; step 4 is on the checklist and not in the
+phase (#415), so sync starts on the same answers as before. There is no partial service: while the phase is `setup`
 the incoming cron returns without fetching, "Try again" refuses with the step
 that is missing, and internal notifications queue with a readable reason instead
 of being cancelled. Nothing here has an opinion once the phase is `syncing`.
@@ -1122,18 +1124,18 @@ Three properties are worth naming, because each was a bug first:
   and the invite button lives on the user list, where the users are. A second
   copy in Settings was a second front door to one action. The end of the line
   below points at that list; it does not copy the button.
-- **The line has an end (#391).** Four steps done and the first incoming mail
-  on a record (`pan.mail.setup.up_and_running`): the checklist folds into one
+- **The line has an end (#391, #415).** Five steps done
+  (`pan.mail.setup.up_and_running`): the checklist folds into one
   line, "Mail Pro is up and running", with Show setup under it. Done is green,
-  and on step 4 amber too: a personal mailbox carrying the system email works
-  and a shared one is a recommendation (#387), so the line keeps step 4's own
+  and on step 5 amber too: a personal mailbox carrying the system email works
+  and a shared one is a recommendation (#387), so the line keeps step 5's own
   sentence under its headline, linked to Mailboxes. Red, the open dot, or
-  another step's amber keep the checklist. A done step 4 alone is not the end, because a mailbox that can send has not shown that
-  mail arrives where it belongs. "On a record" is link coverage's *linked to a
-  document* (`pan.mail.coverage._linked_domain`, §7), read off `mail.message`
-  rather than the routing log, which is cleaned after 90 days. The dot colours
+  another step's amber keep the checklist. The checklist is configuration
+  only: the first mail on a record is an onboarding moment, not a setting, so
+  it is not waited for here. The heartbeat's `setup.done` carries this answer,
+  and the Pantalytics app walks the person to their first mail from it. The dot colours
   are decided once, in `pan.mail.setup.step_dots`; the view draws the word and
-  the end of the line asks whether all four are `ok`, so the two cannot
+  the end of the line asks whether all five are done, so the two cannot
   disagree. Not sticky: a step that turns red later unfolds the checklist,
   because that is where the red dot is. The confetti is once per database
   (`pan_mail_pro.up_and_running_at`, spent by `celebrate_once` from the page
@@ -1176,7 +1178,7 @@ caller: only Microsoft 365 lets one person send as another with their own token.
 (#371). `mailbox_type` (string "Sending policy", stored, never on screen) is
 the rule below, and every reader that asks who may send from a mailbox or
 with whose token reads it: the record rule, the composer's domain,
-`_is_sendable_by`, `sends_with`, the clients. The **Type** column and the
+`_is_sendable_by`, the clients. The **Type** column and the
 form show `provider_type` instead, unstored: what Microsoft 365 or Google
 says the mailbox is, through `ADDRESS_KIND_TYPES` in
 `mail_provider_client.py` (user and alias are Personal, shared and
@@ -1233,10 +1235,12 @@ registration's, or a consumer Google account, is refused with the reason
 (`identity_refusal`, `oauth.tenant_mismatch`) rather than failing at the
 first send with a 404 that reads like a missing right.
 
-The mailbox form says the sending rule from its side: `sends_with` is
-`_resolve_sending_account` in one sentence -- the owner's sign-in and its
-address on a personal or notification mailbox, each sender's own on a
-Microsoft shared one, its own account on Gmail and IMAP.
+The mailbox form is one page (#420). On a personal mailbox, the owner rule
+(`owner_is_address`, the address is the owner's own) hides Owner: whoever
+connected it owns it, and changing that is archiving the mailbox and
+connecting again. On any other address Owner is a plain field. The test is
+the owner rule, not `mailbox_type` (which the notification flag turns
+personal) nor `provider_type` (which calls the Emovr shape personal).
 
 ### Verified access
 
@@ -1276,9 +1280,9 @@ nothing; Gmail is the one provider where Send As is a lookup
 would put an HTTP call where the ORM expects none. At the consent callback,
 for every mailbox the new sign-in serves, so the person who just consented
 sees the answer on the screen they land on. Once an hour per mailbox under
-the sync cron, in a savepoint of its own. From Check mailbox on the mailbox
-form (which then sends one email to whoever pressed it, so the
-row also holds a real send), and before the sync when Try again is pressed.
+the sync cron, in a savepoint of its own, and before the sync when Try again
+is pressed. The form asks nobody to check anything (#420): a refusal reaches
+the status line with what to do about it (`_access_sentence`).
 
 **The probes, per provider.** Microsoft: `GET /users/{address}/mailFolders/inbox`
 with the sign-in's token is the Full Access probe; `mailboxSettings/userPurpose`
@@ -1343,19 +1347,27 @@ answers, and each keeps strictly more than the one above it:
 | `sync_level` | Stop | Label | Adds |
 |---|---|---|---|
 | `replies` | Replies | Replies | nothing; the inbox is read for replies and that is all |
-| `both` | + Sent Items | Replies and Sent Items | the Sent folder, for the owner's own replies to threads Odoo already has |
-| `contacts` | + known contacts | Replies, Sent Items and known contacts | conversations started by a known contact |
-| `everyone` | + new contacts | Replies, Sent Items, known and new contacts | conversations started by a new contact, who becomes one |
+| `both` | + sent replies | Received and sent replies | the Sent folder, for the owner's own replies to threads Odoo already has |
+| `contacts` | + existing contacts | Replies and existing contacts | conversations started by an existing contact |
+| `everyone` | + new contacts | Replies, existing and new contacts | conversations started by a new contact, who becomes one |
 
 The control is a slider with four stops (`static/src/js/sync_level_field.js`,
-the `mailpro_sync_level` field widget), and under it one grid shows what lands
-where: four rows (Replies, Sent Items, New mail from a known contact, New mail
-from a new contact) against two columns, Your mail app and Odoo record. The mail
-app has every row at every stop; each stop turns on exactly one more row in the
-Odoo column, which is what makes it a ladder rather than a menu. Each row's info
-dot unfolds one muted line on what it means. The grid is a claim about the
-gates, so `tests/test_sync_level_slider.py` holds the widget's rows to
-`_reads_sent_folder`, `_syncs_new_conversations` and `_syncs_strangers`.
+the `mailpro_sync_level` field widget). Above it one line says what Mail Pro
+does (it links each conversation to one record, a contact being one) and that
+the mail app keeps every email; it is the field's explanation, so the field has
+no `help`. Under it one grid shows which emails reach Odoo (#419): five rows in
+two groups, Receiving (Replies, New conversation from an existing contact, New
+conversation from a new contact) and Sending (Replies from your mail app, New
+conversation from your mail app), against one In Odoo column that follows the
+slider. Replies are in at every stop, a new conversation started in the mail
+app at none, and each stop above the first turns on exactly one more row, which
+is what makes it a ladder rather than a menu. Each row's info dot unfolds one
+muted line on which record Mail Pro links the conversation to; one line under
+the grid names what no stop lets in (internal domains, Block Email Sync). The
+grid is a claim about the gates, so `tests/test_sync_level_slider.py` holds the
+widget's rows to `_reads_sent_folder`, `_syncs_new_conversations` and
+`_syncs_strangers`, and the sent row that is never in to `_gate_wanted`'s
+refusal in `tests/test_incoming_gates.py`.
 
 #257 removed an earlier five-row table under the radio as repeating the labels.
 It did not: the labels say which rung, only the picture says where the mail
@@ -2085,15 +2097,24 @@ which is the only part of triage that compounds. The inbox says so in those
 words when it confirms.
 
 The word is **linked**, everywhere: the chip row reads `Linked to`, the search
-bar's own filter says `Linked to nothing`, and the report in §7 is called link coverage.
+bar's own filters say `Linked to a contact` and `Linked to nothing`, and the
+report in §7 is called link coverage.
+
+**A contact is a record** (#422). A conversation on one is linked, to it: the
+chip row says `Linked to <contact>` the same way it says `Linked to <quote>`,
+and only a conversation on no record at all reads `Linked to nothing yet`. The
+coverage report still counts mail on a contact apart from mail linked to a
+document, because that number is the matcher's and not the screen's; the code
+names (`link_to`, `contact_only`) stay as they are.
 "Filed" was the technical word for the same idea and it was the only place the
 vocabulary drifted.
 
 The surface is the inbox, not this log. Settings → Technical is where you go
 to ask why; the screen where mail is read is where it gets fixed. A thread
-that is linked carries a quiet `Change link` next to its chips; one that is not
-carries the suggestion (rule 5, or the best proposal any rule made) with a
-`Link it here`, and a `Link to a record`. Both open the same picker, in two
+that is linked carries a quiet `Change link` next to its chips; one that is
+linked to its contact can also carry the suggestion (rule 5, or the best
+proposal any rule made), worded as a choice: `Link it to <record> instead?`
+and `Link it there`. One linked to nothing has a `Link to a record`. Both open the same picker, in two
 steps: a short list of the kinds of record, then Odoo's own record picker.
 
 **Step one, the kind of record.** `link_targets(search, current_model,
@@ -2111,14 +2132,13 @@ mostly "the other quote of the same customer", and that row costs one click.
 Whether it is mostly that is not known yet, so `conversation_linked` carries a
 `same_model` boolean (never the model) and the answer decides later whether
 step one should be skipped. Then, on a conversation that is on something other
-than its contact, **Only <contact>**: the unlink. It skips step two and calls
+than its contact, **Unlink, back to <contact>**. It skips step two and calls
 `link_to` with the contact, because "this belongs on no record" cannot mean
 *nothing* — a message with no model is readable by its author and nobody else
-— and the contact is where the fetcher lands unmatched mail, so it is the state
-the "On a contact only" folder, the coverage report and the suggestion already
-call unlinked. The thread link follows, the same as any other link. On a
-contact there is nothing to unlink and the row is absent; so is it without a
-contact to go back to.
+— and the contact is where the fetcher puts mail it could not place, the mail
+the Linked to a contact filter shows. The thread link follows, the same as any
+other link. On a contact there is nothing to unlink to and the row is absent;
+so is it without a contact to go back to.
 
 **Step two, the record.** Odoo's own `SelectCreateDialog` over the model's list
 view: the search bar, the filters, the columns and the paging every many2one
@@ -2832,10 +2852,8 @@ its own Azure app, amber whatever its status until it has moved (#369).
 Step 4 takes the same rule (#387): amber with "System email from a personal
 mailbox" while the notification mailbox's own Type (`provider_type`) is personal
 (`x_notification_mailbox_type`), green once a shared mailbox carries the flag.
-On Microsoft 365 the Mailboxes list it opens offers Create a shared mailbox
-(the admin center) with a Show me file slot (`SHOW_ME_DIR`, empty means no
-link). The flag itself hides and skips nothing any more: the first mailbox
-anyone adds is their own and carries the flag on its own, so its Sync settings,
+The flag itself hides and skips nothing any more: the first mailbox
+anyone adds is their own and carries the flag on its own, so its sync level,
 its owner's sync level on My Preferences, its place in the Inbox and the
 stale-sync check all follow `sync_level` like any other mailbox.
 
@@ -2930,36 +2948,12 @@ tag and nothing mounts at all: a white screen on every screen, and no server
 log to explain it. `tools/ci_lint.sh` refuses a component tag in any template
 borrowed from another module, because CI runs community and cannot see this.
 
-### 9.15 The test email goes to the person, never to the mailbox
+### 9.15 The mailbox form asks nothing
 
-Three things can be tested about a mailbox and only two of them were:
-`pan.mail.account.action_test_connection` asks the provider whether the
-credentials still work, `pan.mail.mailbox.action_test_incoming` fetches a
-message. Sending was untested, and sending is where a mailbox fails silently —
-a send scope that was never granted, a SendAs that Exchange does not have, a
-DMARC record that rejects the address. Coming back from a consent screen proves
-none of those; only a message that arrives does.
-
-**No confirmation mail is sent when a mailbox is connected.** The provider has
-just told the user the grant succeeded, and a mail addressed *to* the mailbox
-is worse than redundant: the sync reads it straight back in, which is a routing
-log entry and possibly a record created by a self-test. `action_test_send` is a
-button somebody presses, and it sends to `env.user.email` — the person who
-pressed it, who can judge whether it arrived.
-
-That one rule covers all three mailbox types without a branch. On a personal
-mailbox the presser *is* the owner, because `_is_sendable_by` lets nobody else
-send from one; on a shared or notification mailbox it is whoever is testing.
-The button lives on the mailbox form only. My Preferences had a copy until
-19.0.20.6.0; a user whose connection works has nothing to test, and one whose
-connection fails is told so by the banner and by the mail that did not go out.
-
-Two smaller decisions hold it together. The mail is routed with
-`x_send_from_mailbox_id` rather than left to `_resolve_route`, because a test
-that silently leaves from a *different* mailbox tests nothing (§9.5). And the
-whole attempt runs in one savepoint: a failed test that left a `mail.mail`
-behind would be delivered by the queue cron minutes later, which is a test
-email arriving out of nowhere long after the reader concluded it had failed.
+There was a test email on the mailbox form, and a Check step around it, until
+19.0.36.0.0 (#420). The form asks nobody to verify anything now: the access
+check runs on its own (§2 *Verified access*), and a send that fails carries its
+own reason in `failure_reason`, saying what to do at the moment it matters.
 
 ### 9.16 Source-available, free in the Odoo Apps store, paid in the app
 
@@ -3057,9 +3051,10 @@ releases before 19.0.22.0.0 call, stays an alias of it.
 
 - **One heartbeat a day** (`Mail Pro: Pantalytics Heartbeat`). What it sends is
   `_heartbeat_body()` and nothing else: database id, module and Odoo version,
-  connected accounts, whether sync is healthy, which of setup steps 2 to 4
-  are answered (`pan.mail.setup.answers()`, three booleans; step 1 is the row
-  the heartbeat is sent under), and for the last 24 hours how
+  connected accounts, whether sync is healthy, the setup answers
+  (`_setup_report`: the phase's three booleans from `pan.mail.setup.answers()`,
+  and `done`, the five checklist steps done, the one the platform reads, #415;
+  step 1 is the row the heartbeat is sent under), and for the last 24 hours how
   many mails were sent and received (`_mail_counts_since`: off
   `mail.message.x_direction`, so one message is one mail, counted on the day
   it reached Odoo by `create_date` whatever the routing outcome, threaded,
@@ -3149,7 +3144,7 @@ releases before 19.0.22.0.0 call, stays an alias of it.
 - **Check Approval is a button, not a poll loop.** The admin knows when they
   approved. Dropped: the page does not refresh itself.
 - **The account is step 1 of the checklist, and until it is answered the
-  page is that step and About.** Steps 2 to 4 are hidden until step 1 is
+  page is that step and About.** Steps 2 to 5 are hidden until step 1 is
   green (`x_setup_account_done`, an entitled link): before connecting, and
   after the link broke. Every one of them configures a product that will
   not sync, and a checklist you cannot finish reads as the broken thing on
@@ -3189,12 +3184,18 @@ releases before 19.0.22.0.0 call, stays an alias of it.
   after `sync_allowed()` by the same two callers (the cron, which marks the
   mailboxes, and Try again) with its own sentence, and by nothing else: the
   Inbox, new accounts and sending carry on. Step 1 stays done, so steps 2 to
-  4 stay on the page, and it reads Incoming paused with "500 mails this
+  5 stay on the page, and it reads Incoming paused with "500 mails this
   month. Add a card to keep receiving."; the row opens the account page,
   whose one primary button is Add a card to `dashboard_url()` (#382). The
   platform lifts it (a card, the 1st of the month),
   so while it lasts `_retry_if_stuck()` asks every `RETRY_MINUTES` and Check
   again asks at once. The 200-a-day send cap without a card is #128.
+- **Step 1 names the workspace** (#418, the platform half is
+  odoo-mcp-pro-admin#623). The signed answer may carry `workspace_name`,
+  read off `entitlement_json` by `workspace_name()` like `mail_usage()` and
+  cut to 255 characters; step 1 shows it in place of Connected, cut with an
+  ellipsis on the line. No name, an empty one or one that is not a string
+  reads Connected, as before.
 - **No grace period.** A trial is the server's business (a plan or a Stripe
   status), so the module asks one question. Existing customers are upgraded
   and connected in one session; incoming sync pauses for those minutes and the
@@ -3303,7 +3304,7 @@ carries the system email -- is the workspace's, and stays under Settings with
 the mailbox managers.
 
 So the ladder appears twice and is stored once. On the mailbox form it is the
-Sync Settings tab. On **My Preferences → Mail Pro** it is the same slider and
+sync level row. On **My Preferences → Mail Pro** it is the same slider and
 grid (§3) and the one warning that matters, next to Send from:
 `res.users.x_pan_mail_sync_level`, computed from the user's own personal
 mailbox and written back to it. The selection comes from
@@ -3331,8 +3332,8 @@ fields and public methods on `res.users` are both reachable over RPC for any id
 an internal user can browse, which is all of them.
 
 **The notification mailbox is excluded**, even when an administrator owns it.
-It carries the system email, its own form hides the Sync Settings tab, and
-nothing about it is one person's preference.
+It carries the system email, and nothing about it is one person's
+preference.
 
 ### 9.20 Microsoft 365 through the Pantalytics app
 
@@ -3568,7 +3569,7 @@ reader may open the document a mail is on, and the Inbox adds one clause in
 front of it (`pan.mail.conversation._whose_domain`, on every query the
 screen makes): a colleague's **personal** mailbox shows only its *linked*
 mail. The owner sees the whole of what the sync imported from their own
-mailbox, the mail on a contact only included; everyone else sees the mail
+mailbox, the mail linked to its contact included; everyone else sees the mail
 of it that is linked to a record, and then only on the records they may
 open. Without that clause the fallback home of an unplaced mail, the
 sender's contact, put every unlinked mail of every personal mailbox on
@@ -3686,7 +3687,7 @@ eight groups:
 | Contracts | `test_provider_contract.py` | Every provider answers the contract identically |
 | Providers | `test_microsoft_provider.py`, `test_google_provider.py`, `test_imap_provider.py`, `test_imap_live.py`, `test_pan_mail_provider.py`, `test_mail_account.py` | Wire-level behaviour per vendor, the application registration, and the credential rows behind them |
 | Pipeline | `test_incoming_sync.py`, `test_incoming_sync_gmail.py`, `test_incoming_mail.py`, `test_incoming_gates.py`, `test_internal_domains.py`, `test_mail_matcher.py`, `test_thread_drift.py`, `test_reply_sync.py`, `test_attachments.py`, `test_routing_log.py`, `test_mail_coverage.py`, `test_sync_sends_nothing.py` | Fetch → filter → match → post, the reply that comes back to its record, and the one invariant of the sync's outbound side |
-| Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py`, `test_mailbox_test_send.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
+| Sending | `test_outgoing_mail.py`, `test_outgoing_threading.py`, `test_recipient_split.py`, `test_recipient_columns.py`, `test_no_mailbox_fallback.py`, `test_system_notifications.py`, `test_internal_notes.py` | Routing, threading, one mail for the To line and one send per follower, what leaves when nothing is configured, and what a note never does |
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_up_and_running.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding and its end, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_inbox_tour.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, the tour's row and its sentences, and that no colour lacks a dark side |
 | The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_hosting.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, where the Odoo runs and that an Odoo.sh staging branch is a copy, the error ledger, and what leaves for PostHog |
@@ -3734,8 +3735,8 @@ no endpoint to ask which mailboxes a sign-in may send as
 ([known limitation](https://learn.microsoft.com/en-us/answers/questions/1168052/)),
 and an SMTP server's 250 to MAIL FROM proves nothing. Whether a sign-in can
 *read* a mailbox is probed (§2 *Verified access*); whether it may send as the
-address is learned from the first real send, which is what the test email on
-the mailbox form is for. Gmail answers both before a send.
+address is learned from the first real send. Gmail answers both before a
+send.
 
 **IMAP `SEARCH SINCE` is date-granular**, so the cursor is asked wide and
 narrowed in Python — see §9.6.

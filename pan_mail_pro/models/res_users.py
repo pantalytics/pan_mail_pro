@@ -118,9 +118,6 @@ class ResUsers(models.Model):
         string='Sync level',
         compute='_compute_pan_mail_sync_level',
         inverse='_inverse_pan_mail_sync_level',
-        help='How much of this mailbox Odoo reads back. Replies to mail Odoo '
-             'sent always land on their record; each level adds one more kind '
-             'of mail on top of that.',
     )
 
     # Why Connect mailbox is not offered right now, in the reader's words,

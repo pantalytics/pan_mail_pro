@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """The sync level is a slider, and its grid says what the fetcher does (#390).
 
-The grid under the slider claims, per stop, which kind of mail reaches the
-Odoo record. Those claims are written in JavaScript and enforced in Python
+The grid under the slider claims, per stop, which emails Mail Pro brings into
+Odoo (#419: two groups, receiving and sending, one In Odoo column). Those claims are written in JavaScript and enforced in Python
 (`pan.mail.mailbox`'s three rung questions, which `_folders_to_sync` and
 `_gate_wanted` ask), so a rung that moves in one place and not the other
 would put a picture on screen the sync does not keep. This file holds the
@@ -22,9 +22,9 @@ WIDGET = os.path.join(MODULE, 'static', 'src', 'js', 'sync_level_field.js')
 
 LABELS = [
     ('replies', 'Replies'),
-    ('both', 'Replies and Sent Items'),
-    ('contacts', 'Replies, Sent Items and known contacts'),
-    ('everyone', 'Replies, Sent Items, known and new contacts'),
+    ('both', 'Received and sent replies'),
+    ('contacts', 'Replies and existing contacts'),
+    ('everyone', 'Replies, existing and new contacts'),
 ]
 
 
@@ -35,30 +35,54 @@ class TestSyncLevelSlider(MailProTestCase):
         selection = self.env['pan.mail.mailbox']._fields['sync_level'].selection
         self.assertEqual(list(selection), LABELS)
 
-    def _rows(self):
-        """The grid's rows as the widget declares them: first stop at which
-        the Odoo record gets each one."""
+    def _source(self):
         with open(WIDGET, encoding='utf-8') as handle:
-            source = handle.read()
-        block = source.split('const ROWS = [', 1)[1].split('];', 1)[0]
-        return [int(found) for found in re.findall(r'from:\s*(\d+)', block)]
+            return handle.read()
+
+    def _rows(self):
+        """The grid's rows as the widget declares them, in screen order: the
+        first stop at which each one is in Odoo, None for a row no stop
+        brings in."""
+        block = self._source().split('const GROUPS = [', 1)[1].split('];', 1)[0]
+        return [None if found == 'null' else int(found)
+                for found in re.findall(r'from:\s*(\d+|null)', block)]
 
     def test_the_grid_is_the_gates(self):
-        """Row 0 (replies) at every stop, row 1 (Sent Items) once the Sent
-        folder is read, row 2 once new conversations from contacts enter,
-        row 3 once a new address may become a contact."""
-        self.assertEqual(self._rows(), [0, 1, 2, 3])
+        """Receiving: replies at every stop, a new conversation from an
+        existing contact once new conversations enter, one from a new contact
+        once a new address may become a contact. Sending: replies from the
+        mail app once the Sent folder is read, and a new conversation started
+        there at no stop (`_gate_wanted` refuses it whatever the level;
+        `test_incoming_gates`' `test_no_rung_lets_the_outbox_start_a_conversation`
+        holds the gate to that)."""
+        self.assertEqual(self._rows(), [0, 2, 3, 1, None])
         mailbox = self.personal_mailbox.sudo()
         for stop, (value, _label) in enumerate(LABELS):
             mailbox.sync_level = value
             from_code = [
                 True,
-                mailbox._reads_sent_folder(),
                 mailbox._syncs_new_conversations(),
                 mailbox._syncs_strangers(),
+                mailbox._reads_sent_folder(),
+                False,
             ]
-            from_grid = [stop >= first for first in self._rows()]
+            from_grid = [first is not None and stop >= first for first in self._rows()]
             self.assertEqual(from_grid, from_code, value)
+
+    def test_each_stop_adds_one_row(self):
+        """What makes it a ladder: every stop above the first turns exactly
+        one row on, so the flash on a stop change marks one row."""
+        firsts = [first for first in self._rows() if first is not None]
+        self.assertEqual(sorted(firsts), list(range(len(LABELS))))
+
+    def test_the_copy_links_a_conversation_to_a_record(self):
+        """The widget says Mail Pro links a conversation to a record, a contact
+        being one. Never that an email lands on or goes on something (#419)."""
+        source = self._source().lower()
+        for vague in ('lands on', 'land on', 'goes on', 'sent items', 'known contact'):
+            self.assertNotIn(vague, source, vague)
+        for label in (_label for _value, _label in LABELS):
+            self.assertNotIn('sent items', label.lower())
 
     def _field(self, view, name):
         arch = self.env[view.model].get_view(view.id)['arch']

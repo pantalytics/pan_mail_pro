@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""The end of onboarding: "Mail Pro is up and running", once (#391).
+"""The end of onboarding: "Mail Pro is up and running", once (#391, #415).
 
-It fires when the four checklist steps are done (green, or amber on step 4,
-a personal mailbox carrying the system email) and the first incoming mail has
-landed on a record, the platform's station 4. A done step 4 alone is not the
-end. The confetti is once per database, a config parameter, and the one
+It fires when the five checklist steps are done: green, or amber on step 5,
+a personal mailbox carrying the system email. The checklist is
+configuration only, so it does not wait for the first mail on a record; the
+heartbeat's `setup.done` tells the Pantalytics app, which walks the person
+to it. The confetti is once per database, a config parameter, and the one
 next action opens the colleagues who have not connected a mailbox yet.
 """
 from odoo.exceptions import AccessError
@@ -13,6 +14,8 @@ from odoo.tests import tagged
 from odoo.addons.pan_mail_pro.models.pan_mail_setup import CELEBRATED_PARAM
 
 from .common import MailProTestCase
+
+STEPS = ('account', 'provider', 'domains', 'mailboxes', 'notification')
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -29,35 +32,22 @@ class TestUpAndRunning(MailProTestCase):
         self.provider = self.env['pan.mail.provider'].create({
             'provider': 'outlook', 'registration': 'pantalytics',
             'pantalytics_client_id': 'app-id'})
-        # Step 4: the fixture's notification mailbox is shared, and its
-        # owner's sign-in has been seen to read and send from it.
+        # Steps 4 and 5: the fixture's notification mailbox is shared, it
+        # works, and its owner's sign-in has been seen to read and send from it.
         self.owner_account = self.notif_owner.x_pan_mail_account_ids
         self.env['pan.mail.mailbox.access'].note_send(
             self.notification_mailbox, self.owner_account, True)
-        self.lead = self.env['crm.lead'].create({'name': 'Asafdichtingen'})
-
-    def mail(self, model, res_id, direction='incoming'):
-        return self.env['mail.message'].sudo().create({
-            'model': model, 'res_id': res_id, 'message_type': 'email',
-            'body': '<p>Hello</p>', 'x_direction': direction,
-            'x_mailbox_id': self.shared_mailbox.id})
-
-    def on_a_record(self):
-        return self.mail('crm.lead', self.lead.id)
 
     def settings(self):
         return self.env['res.config.settings'].create({})
 
     # ------------------------------------------------------------- the dots
 
-    def test_four_green_dots(self):
-        self.assertEqual(self.Setup.step_dots(), {
-            'account': 'ok', 'provider': 'ok', 'domains': 'ok', 'mailboxes': 'ok'})
+    def test_five_green_dots(self):
+        self.assertEqual(self.Setup.step_dots(), dict.fromkeys(STEPS, 'ok'))
         settings = self.settings()
         self.assertEqual(
-            (settings.x_account_dot, settings.x_provider_dot,
-             settings.x_domains_dot, settings.x_mailboxes_dot),
-            ('ok', 'ok', 'ok', 'ok'))
+            tuple(settings[f'x_{step}_dot'] for step in STEPS), ('ok',) * 5)
 
     def test_each_dot_keeps_the_colour_the_page_drew(self):
         """The rules moved out of the view's `invisible` expressions; these
@@ -75,69 +65,72 @@ class TestUpAndRunning(MailProTestCase):
         self.assertEqual(self.Setup.step_dots()['provider'], 'todo')
 
         self.personal_mailbox.is_notification_mailbox = True
-        self.assertEqual(self.Setup.step_dots()['mailboxes'], 'attention',
+        self.assertEqual(self.Setup.step_dots()['notification'], 'attention',
                          'a personal mailbox carries the system email')
+        self.assertEqual(self.Setup.step_dots()['mailboxes'], 'ok', 'step 4 has no opinion')
         self.notification_mailbox.is_notification_mailbox = True
-        self.assertEqual(self.Setup.step_dots()['mailboxes'], 'ok')
+        self.assertEqual(self.Setup.step_dots()['notification'], 'ok')
         self.env['pan.mail.mailbox.access'].note_send(
             self.notification_mailbox, self.owner_account, False, error='refused')
-        self.assertEqual(self.Setup.step_dots()['mailboxes'], 'warn')
+        self.assertEqual(self.Setup.step_dots()['notification'], 'warn')
 
-    def test_a_stopped_mailbox_is_red(self):
+    def test_a_stopped_mailbox_is_red_on_step_4(self):
+        """A stopped mailbox is step 4's: the notification mailbox still
+        sends, so step 5 keeps its own colour."""
         self.shared_mailbox.sudo().state = 'error'
-        self.assertEqual(self.Setup.step_dots()['mailboxes'], 'warn')
+        dots = self.Setup.step_dots()
+        self.assertEqual(dots['mailboxes'], 'warn')
+        self.assertEqual(dots['notification'], 'ok')
+
+    def test_step_4_wants_one_mailbox_that_works(self):
+        """Not stopped and signed in: a mailbox nobody can reach is not one
+        that works."""
+        self.assertEqual(self.Setup._mailboxes_dot(), 'ok')
+        for user in (self.notif_owner, self.other_user, self.salesperson):
+            self.disconnect(user)
+        self.assertEqual(self.Setup._mailboxes_dot(), 'todo')
 
     def test_the_view_draws_the_word(self):
         """One rule: every dot on the page reads its step's word."""
         arch = self.env['res.config.settings'].get_view(
             self.env.ref('pan_mail_pro.res_config_settings_view_form').id, 'form')['arch']
-        for step in ('account', 'provider', 'domains', 'mailboxes'):
+        for step in STEPS:
             self.assertIn(f"x_{step}_dot != 'ok'", arch)
         self.assertNotIn('x_notification_access_state != \'ok\'', arch)
         self.assertIn('name="mailpro_up_and_running"', arch)
+        for name in ('4. Mailboxes', '5. Notification mailbox'):
+            self.assertIn(name, arch)
 
-    # ------------------------------------------------ the first mail on a record
+    # ------------------------------------------------------- the end of the line
 
-    def test_green_is_not_the_end_without_a_mail_on_a_record(self):
-        self.assertFalse(self.Setup.first_mail_on_record())
-        self.assertFalse(self.Setup.up_and_running())
-        self.assertFalse(self.settings().x_up_and_running)
-        self.on_a_record()
+    def test_five_done_is_up_and_running_without_a_mail(self):
+        """Configuration only (#415): nothing has to have arrived yet."""
+        self.assertFalse(self.env['mail.message'].sudo().search_count(
+            [('x_direction', '=', 'incoming')]))
         self.assertTrue(self.Setup.up_and_running())
         self.assertTrue(self.settings().x_up_and_running)
 
-    def test_a_contact_an_outgoing_mail_or_a_note_is_not_it(self):
-        self.mail('res.partner', self.external_partner.id)
-        self.mail('crm.lead', self.lead.id, direction='outgoing')
-        self.env['mail.message'].sudo().create({
-            'model': 'crm.lead', 'res_id': self.lead.id,
-            'message_type': 'comment', 'body': '<p>A note</p>'})
-        self.assertFalse(self.Setup.first_mail_on_record())
-
-    def test_it_is_what_link_coverage_calls_linked(self):
-        """One reading of "on a record": the coverage report's."""
-        self.on_a_record()
-        self.mail('res.partner', self.external_partner.id)
-        counts = self.env['pan.mail.coverage'].counts_since('2000-01-01')
-        linked = self.env['mail.message'].sudo().search_count(
-            [('x_direction', '!=', False)] + self.env['pan.mail.coverage']._linked_domain())
-        self.assertEqual(counts['linked'], linked)
-
-    def test_an_amber_step_4_is_done(self):
+    def test_an_amber_step_5_is_done(self):
         """A personal mailbox carrying the system email works; a shared one
         is the recommendation, said under the headline, not a blocker."""
-        self.on_a_record()
         self.personal_mailbox.is_notification_mailbox = True
-        self.assertEqual(self.Setup.step_dots()['mailboxes'], 'attention')
+        self.assertEqual(self.Setup.step_dots()['notification'], 'attention')
         self.assertTrue(self.Setup.up_and_running())
         settings = self.settings()
         self.assertTrue(settings.x_up_and_running)
-        self.assertEqual(settings.x_mailboxes_dot, 'attention', 'the line reads this')
+        self.assertEqual(settings.x_notification_dot, 'attention', 'the line reads this')
+
+    def test_no_working_mailbox_is_not_done(self):
+        for user in (self.notif_owner, self.other_user, self.salesperson):
+            self.disconnect(user)
+        dots = self.Setup.step_dots()
+        self.assertEqual(dots['mailboxes'], 'todo')
+        self.assertFalse(self.Setup.up_and_running(dots))
+        self.assertFalse(self.settings().x_up_and_running)
 
     def test_red_or_open_steps_block_and_so_does_another_amber(self):
-        """Only step 4's amber is a recommendation; an own Azure app on step
+        """Only step 5's amber is a recommendation; an own Azure app on step
         2 still has its own line to show, so it keeps the checklist open."""
-        self.on_a_record()
         self.provider.registration = 'own'
         self.assertEqual(self.Setup.step_dots()['provider'], 'attention')
         self.assertFalse(self.Setup.up_and_running())
@@ -148,7 +141,6 @@ class TestUpAndRunning(MailProTestCase):
 
     def test_a_red_step_later_opens_the_checklist_again(self):
         """Not sticky: the line comes back where the red dot is."""
-        self.on_a_record()
         self.assertTrue(self.Setup.up_and_running())
         self.shared_mailbox.sudo().state = 'error'
         self.assertFalse(self.Setup.up_and_running())
@@ -156,7 +148,6 @@ class TestUpAndRunning(MailProTestCase):
     # ----------------------------------------------------------- the confetti
 
     def test_confetti_once_per_database(self):
-        self.on_a_record()
         self.assertFalse(self.Params.get_param(CELEBRATED_PARAM))
         self.assertTrue(self.Setup.celebrate_once())
         self.assertTrue(self.Params.get_param(CELEBRATED_PARAM))
@@ -165,11 +156,11 @@ class TestUpAndRunning(MailProTestCase):
 
     def test_no_confetti_before_the_end(self):
         """A call before the line is done cannot spend the moment."""
+        self.env['pan.mail.domain'].search([]).unlink()
         self.assertFalse(self.Setup.celebrate_once())
         self.assertFalse(self.Params.get_param(CELEBRATED_PARAM))
 
     def test_only_an_administrator_spends_it(self):
-        self.on_a_record()
         with self.assertRaises(AccessError):
             self.Setup.with_user(self.salesperson).celebrate_once()
         self.assertFalse(self.Params.get_param(CELEBRATED_PARAM))
@@ -201,8 +192,7 @@ class TestUpAndRunning(MailProTestCase):
         there (19 and 20 compute the rest as well). Measured 2026-11-03:
         without a dependency the checklist drew no dots on 18 and the line
         never came."""
-        self.on_a_record()
-        dots = ['x_account_dot', 'x_provider_dot', 'x_domains_dot', 'x_mailboxes_dot']
+        dots = [f'x_{step}_dot' for step in STEPS]
         spec = {name: {} for name in dots + ['x_up_and_running', 'company_id']}
         value = self.env['res.config.settings'].onchange({}, [], spec).get('value', {})
         for name in dots:

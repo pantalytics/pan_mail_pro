@@ -102,7 +102,7 @@
                     collapse every unmatched message in the database into a
                     single row belonging to nobody.
                 -->
-                <filter name="on_contact" string="On a contact only"
+                <filter name="on_contact" string="Linked to a contact"
                         domain="[('model', '=', 'res.partner')]"/>
                 <filter name="unlinked" string="Linked to nothing"
                         domain="[('model', '=', False)]"

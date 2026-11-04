@@ -3,7 +3,7 @@
 
 `test_mailbox_access.py` is the evidence: what each provider answers and how
 the table records it. This file is the reading of it: the health badge, the
-one sentence under it, step 4 of the setup checklist and the alert on the
+one sentence under it, step 5 of the setup checklist and the alert on the
 mailboxes line. Every case here is a database shape, written straight into
 the table, and nothing contacts a provider.
 
@@ -93,7 +93,8 @@ class TestMailboxHealth(MailProTestCase):
         self._refresh(mailbox)
         self.assertEqual(mailbox.health_status, 'error')
         self.assertEqual(mailbox.status_message,
-                         'sales@company.test is an alias on another mailbox.')
+                         'sales@company.test is an alias on another mailbox. '
+                         'Use the address of a real mailbox.')
 
     def test_an_owner_who_cannot_read_their_mailbox_is_an_error(self):
         mailbox = self.personal_mailbox
@@ -142,9 +143,9 @@ class TestMailboxHealth(MailProTestCase):
                       ._description_selection(self.env))
         self.assertEqual(labels['healthy'], 'Working')
 
-    # --------------------------------------------------------------- step 4
+    # --------------------------------------------------------------- step 5
 
-    def test_step_4_is_open_until_the_owner_has_been_seen_to_send(self):
+    def test_step_5_is_open_until_the_owner_has_been_seen_to_send(self):
         state, sentence = self.Setup.notification_mailbox_verified()
         self.assertEqual(state, 'open')
         self.assertIn('Not checked yet', sentence)
@@ -153,11 +154,11 @@ class TestMailboxHealth(MailProTestCase):
                                 'error': None})
         state, sentence = self.Setup.notification_mailbox_verified()
         self.assertEqual(state, 'open')
-        self.assertIn('Not yet sent from', sentence)
+        self.assertEqual(sentence, 'Not yet sent from. It turns green after the first email.')
         self.Access.note_send(self.notification_mailbox, self.owner_account, True)
         self.assertEqual(self.Setup.notification_mailbox_verified(), ('ok', ''))
 
-    def test_step_4_is_broken_when_the_provider_refused(self):
+    def test_step_5_is_broken_when_the_provider_refused(self):
         self.Access.note_send(self.notification_mailbox, self.owner_account, False,
                               error='refused by Exchange')
         state, sentence = self.Setup.notification_mailbox_verified()

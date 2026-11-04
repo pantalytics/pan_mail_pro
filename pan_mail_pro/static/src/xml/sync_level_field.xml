@@ -2,6 +2,7 @@
 <templates xml:space="preserve">
     <t t-name="pan_mail_pro.SyncLevelField">
         <div class="o_mailpro_sync_level" t-att-data-level="this.props.record.data[this.props.name]">
+            <p class="o_mailpro_sync_intro" t-esc="this.intro"/>
             <div class="o_mailpro_sync_slider">
                 <!-- Odoo's own range: the arrows move it, the theme draws its
                      focus ring. The full label is what a screen reader says. -->
@@ -28,51 +29,49 @@
                 </div>
             </div>
 
+            <!-- Two groups, receiving and sending, and one column that
+                 follows the slider. -->
             <table class="o_mailpro_sync_grid">
                 <thead>
                     <tr>
                         <td/>
-                        <th scope="col" class="o_mailpro_sync_col">
-                            <i class="fa fa-envelope-o" aria-hidden="true"/>
-                            <span>Your mail app</span>
-                        </th>
-                        <th scope="col" class="o_mailpro_sync_col">
-                            <i class="fa fa-file-text-o" aria-hidden="true"/>
-                            <span>Odoo record</span>
-                        </th>
+                        <th scope="col" class="o_mailpro_sync_col">In Odoo</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <t t-foreach="this.rows" t-as="row" t-key="row_index">
-                        <tr class="o_mailpro_sync_row"
-                            t-att-class="{'o_mailpro_sync_flash': this.state.flash.includes(row_index)}"
-                            t-att-data-row="row_index">
-                            <th scope="row" class="o_mailpro_sync_what">
-                                <span t-esc="row.name"/>
-                                <button type="button" class="o_mailpro_sync_info"
-                                        t-att-aria-expanded="this.state.open[row_index] ? 'true' : 'false'"
-                                        t-att-aria-controls="this.id + '_detail_' + row_index"
-                                        t-att-aria-label="row.name"
-                                        t-on-click="(ev) => this.toggle(+ev.currentTarget.closest('tr').dataset.row)">i</button>
-                                <div class="o_mailpro_sync_detail text-muted"
-                                     t-att-id="this.id + '_detail_' + row_index"
-                                     t-if="this.state.open[row_index]"
-                                     t-esc="row.detail"/>
-                            </th>
-                            <td class="o_mailpro_sync_cell o_mailpro_sync_app">
-                                <span class="o_mailpro_sync_mark o_mailpro_sync_on" role="img"
-                                      aria-label="Yes"><i class="fa fa-check" aria-hidden="true"/></span>
-                            </td>
-                            <td class="o_mailpro_sync_cell o_mailpro_sync_odoo">
-                                <span t-if="this.inOdoo(row)" class="o_mailpro_sync_mark o_mailpro_sync_on"
-                                      role="img" aria-label="Yes"><i class="fa fa-check" aria-hidden="true"/></span>
-                                <span t-else="" class="o_mailpro_sync_mark o_mailpro_sync_off"
-                                      role="img" aria-label="No"/>
-                            </td>
+                <t t-foreach="this.groups" t-as="group" t-key="group_index">
+                    <tbody class="o_mailpro_sync_group">
+                        <tr>
+                            <th scope="rowgroup" colspan="2" class="o_mailpro_sync_heading"
+                                t-esc="group.name"/>
                         </tr>
-                    </t>
-                </tbody>
+                        <t t-foreach="group.rows" t-as="row" t-key="row.index">
+                            <tr class="o_mailpro_sync_row"
+                                t-att-class="{'o_mailpro_sync_flash': this.state.flash.includes(row.index)}"
+                                t-att-data-row="row.index">
+                                <th scope="row" class="o_mailpro_sync_what">
+                                    <span t-esc="row.name"/>
+                                    <button type="button" class="o_mailpro_sync_info"
+                                            t-att-aria-expanded="this.state.open[row.index] ? 'true' : 'false'"
+                                            t-att-aria-controls="this.id + '_detail_' + row.index"
+                                            t-att-aria-label="row.name"
+                                            t-on-click="(ev) => this.toggle(+ev.currentTarget.closest('tr').dataset.row)">i</button>
+                                    <div class="o_mailpro_sync_detail text-muted"
+                                         t-att-id="this.id + '_detail_' + row.index"
+                                         t-if="this.state.open[row.index]"
+                                         t-esc="row.detail"/>
+                                </th>
+                                <td class="o_mailpro_sync_cell o_mailpro_sync_odoo">
+                                    <span t-if="this.inOdoo(row)" class="o_mailpro_sync_mark o_mailpro_sync_on"
+                                          role="img" aria-label="Yes"><i class="fa fa-check" aria-hidden="true"/></span>
+                                    <span t-else="" class="o_mailpro_sync_mark o_mailpro_sync_off"
+                                          role="img" aria-label="No"/>
+                                </td>
+                            </tr>
+                        </t>
+                    </tbody>
+                </t>
             </table>
+            <p class="o_mailpro_sync_never text-muted" t-esc="this.never"/>
         </div>
     </t>
 </templates>

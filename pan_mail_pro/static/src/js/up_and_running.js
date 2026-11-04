@@ -2,10 +2,9 @@
 /**
  * The end of onboarding (#391): "Mail Pro is up and running", once.
  *
- * Drawn on Settings > Mail Pro when the four steps are done and the first
- * incoming mail has landed on a record (`pan.mail.setup.up_and_running`).
- * An amber step 4 is done: it adds step 4's own line under the headline,
- * the way to Mailboxes (#387).
+ * Drawn on Settings > Mail Pro when the five steps are done
+ * (`pan.mail.setup.up_and_running`, #415). An amber step 5 is done: it adds
+ * step 5's own line under the headline, the way to Mailboxes (#387).
  * The checklist folds under this line; Show setup unfolds it again, held
  * here rather than in a field, so it is a click and never a change for the
  * settings form to save. The stylesheet hides the steps while it is folded.
@@ -87,9 +86,9 @@ export class UpAndRunning extends Component {
         return this.props.record.data.x_unconnected_count;
     }
 
-    /** Step 4 is amber: a personal mailbox carries the system email (#387). */
+    /** Step 5 is amber: a personal mailbox carries the system email (#387). */
     get personalNotification() {
-        return this.props.record.data.x_mailboxes_dot === "attention";
+        return this.props.record.data.x_notification_dot === "attention";
     }
 
     openMailboxes() {
@@ -133,6 +132,6 @@ registry.category("view_widgets").add("mailpro_up_and_running", {
     component: UpAndRunning,
     fieldDependencies: [
         { name: "x_unconnected_count", type: "integer" },
-        { name: "x_mailboxes_dot", type: "selection" },
+        { name: "x_notification_dot", type: "selection" },
     ],
 });

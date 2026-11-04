@@ -1,9 +1,10 @@
-// The sync level slider and what lands where under it (#390), on the
+// The sync level slider and what reaches Odoo under it (#390, #419), on the
 // mailbox form and on My Preferences.
 //
 // The slider is Bootstrap's `form-range`, so its thumb, track and focus ring
-// are the theme's in both colour schemes. What is ours is the stop names
-// under it and the grid: a 1px rule for depth, green only for "lands here".
+// are the theme's in both colour schemes. What is ours is the intro above it,
+// the stop names under it and the grid: a 1px rule for depth, green only for
+// "in Odoo".
 
 // Light and dark: Odoo compiles this file once per colour scheme, see the
 // palette at the top of conversation_view.scss.
@@ -29,6 +30,11 @@ $mailpro-sync-flash: 0.4s;
 .o_mailpro_sync_level {
     max-width: 36rem;
     width: 100%;
+
+    .o_mailpro_sync_intro {
+        margin-bottom: 0.75rem;
+        line-height: 1.45;
+    }
 
     .o_mailpro_sync_slider {
         padding-top: 0.25rem;
@@ -139,12 +145,15 @@ $mailpro-sync-flash: 0.4s;
         text-align: center;
         font-size: 0.82rem;
         font-weight: 400;
+    }
 
-        .fa {
-            display: block;
-            margin-bottom: 0.15rem;
-            font-size: 1rem;
-        }
+    // Receiving and Sending: a label over its rows, quieter than a row.
+    .o_mailpro_sync_heading {
+        padding: 0.45rem 0.75rem 0.3rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: $mailpro-sync-muted;
+        background: rgba($mailpro-ink, 0.03);
     }
 
     .o_mailpro_sync_what {
@@ -187,6 +196,13 @@ $mailpro-sync-flash: 0.4s;
     .o_mailpro_sync_detail {
         max-width: 32rem;
         margin-top: 0.3rem;
+        font-size: 0.82rem;
+        line-height: 1.45;
+    }
+
+    .o_mailpro_sync_never {
+        max-width: 32rem;
+        margin: 0.5rem 0 0;
         font-size: 0.82rem;
         line-height: 1.45;
     }
