@@ -85,6 +85,28 @@ class TestIncomingGates(MailProTestCase):
     # ------------------------------------------------------------------ #
     # The contract
     # ------------------------------------------------------------------ #
+    def test_a_duplicate_from_a_second_personal_mailbox_notes_its_owner(self):
+        """#435. The copy is in another mailbox, so this mailbox's owner is
+        one of the people it reached; the same mailbox or a shared one adds
+        nobody."""
+        stored = self.env['mail.message'].create({
+            'model': 'res.partner', 'res_id': self.external_partner.id,
+            'message_type': 'email', 'message_id': INTERNET_ID,
+            'x_mailbox_id': self.shared_mailbox.id,
+        })
+        owner = self.mailbox.owner_user_id.partner_id
+
+        skip = self.processor._gate_duplicate(self._ctx())
+        self.assertEqual(skip.reason, 'duplicate')
+        self.assertEqual(stored.partner_ids, owner)
+
+        stored.partner_ids = False
+        ctx = dict(self._ctx(), mailbox=self.shared_mailbox)
+        self.processor._gate_duplicate(ctx)
+        stored.x_mailbox_id = self.mailbox
+        self.processor._gate_duplicate(self._ctx())
+        self.assertFalse(stored.partner_ids)
+
     def test_the_ladder_is_the_documented_order(self):
         """A reorder is a real change and should read as one in the diff."""
         self.assertEqual(

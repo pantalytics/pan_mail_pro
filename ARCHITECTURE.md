@@ -3577,7 +3577,10 @@ screen for every mailbox manager, because a contact is readable by every
 internal user. A **shared** mailbox has no owner and is the team's: its
 contact-only mail stays on screen for every reader, because that is the
 pile somebody has to work through. Mail in no mailbox at all passes, for
-door 1.
+door 1. So does mail that reached the reader: the dedup files a mail two
+colleagues received in one mailbox, and the other's copy puts its owner on
+`partner_ids` (`pan.mail.fetcher._note_copy`, #435), so a Cc is never hidden
+from the person it was sent to.
 
 **Which mailboxes the Inbox lists.** Your own personal mailbox and the
 shared ones, for an administrator too (`_listed_mailbox_domain`, read by
