@@ -1014,7 +1014,13 @@ it — and `tests/test_menus.py` fails if a new screen goes back to the old habi
 `pan.mail.account` holds the credentials that used to live on `res.users`. An
 account with a `user_id` is a person's own connection; an account with none is a
 service account — how a Gmail shared mailbox works, where the address is a real
-Workspace account with no Odoo user behind it.
+Workspace account with no Odoo user behind it. A mailbox manager signs it in
+from the mailbox form (`action_sign_in_as_address`, 19.0.40.0.0): the round
+carries its nonce in the session (`ADDRESS_SIGN_IN_KEY`), forces Google's
+account chooser, and the callback stores the tokens on the account with no
+user only when Google names exactly the mailbox's address. Before that the
+only round stored a sign-in on the person who pressed it, so the guide's "sign
+in as sales@" could not be done without disconnecting yourself first.
 
 ### Module structure
 
