@@ -643,7 +643,7 @@ class PanMailFetcher(models.AbstractModel):
         """
         duplicate = self._duplicate_of(ctx)
         if duplicate:
-            self._note_copy(ctx['mailbox'], duplicate)
+            self._note_copy(ctx.get('mailbox'), duplicate)
             return Skip(
                 'duplicate', _('This message is already in Odoo.'), quiet=True,
             )
@@ -664,8 +664,10 @@ class PanMailFetcher(models.AbstractModel):
         Asked on a refusal that ends most of every run, so it writes only when
         something is missing, and reads nothing it was not handed.
         """
+        if not mailbox or mailbox.mailbox_type != 'personal':
+            return
         owner = mailbox.owner_user_id
-        if mailbox.mailbox_type != 'personal' or not owner.partner_id:
+        if not owner.partner_id:
             return
         missing = messages.sudo().filtered(
             lambda m: m.x_mailbox_id != mailbox
