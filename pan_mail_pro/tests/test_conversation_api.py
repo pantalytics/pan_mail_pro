@@ -1106,6 +1106,27 @@ class TestConversationApi(TransactionCase):
             ungrouped=on_contact['ungrouped'])
         self.assertEqual([row['subject'] for row in rows], ['Only on the contact'])
 
+    def test_a_cc_in_a_colleague_s_mailbox_is_on_screen_for_its_recipient(self):
+        """#435. To Anna, Cc Sam: the dedup files the one copy in Anna's
+        personal mailbox, linked to the contact only. Sam's own mailbox meets
+        the same mail on its next sync, which puts Sam on the recipients, and
+        from then on Sam reads it -- a stranger to the mail still does not."""
+        owner, theirs = self._personal_mailbox('anna.cc@company.test')
+        reader, mine = self._personal_mailbox('sam.cc@company.test')
+        stranger = self._mailbox_manager('kim.cc@company.test')
+        cc = self._mail(record=self.customer, subject='Urenschrijven', mailbox=theirs)
+
+        def subjects(user):
+            read = self.Conversation.with_user(user).read_conversation(
+                'res.partner', self.customer.id, mailbox_id=mine.id)
+            return [row['subject'] for row in read['messages']]
+
+        self.assertEqual(subjects(reader), [], 'the bug: hidden before the copy is seen')
+        self.env['pan.mail.fetcher']._note_copy(mine, cc)
+        self.assertIn(reader.partner_id, cc.partner_ids)
+        self.assertEqual(subjects(reader), ['Urenschrijven'])
+        self.assertEqual(subjects(stranger), [], 'nobody else gains anything')
+
     def test_a_shared_mailbox_s_unlinked_mail_is_the_team_s(self):
         """The hard call, pinned: a shared mailbox has no owner, so its
         contact-only mail is the pile every manager may work through."""

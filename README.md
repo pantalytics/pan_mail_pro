@@ -197,7 +197,7 @@ needs no setting. Sending needs none either: which mailbox an email leaves from
 is picked per message, under **Send From** in the composer, and it shows up in
 the Sent Items of your mail app like any other mail.
 
-1. Open a mailbox, tab **Sync Settings**
+1. Open a mailbox
 2. Move the **Sync level** slider. Each stop keeps strictly more than the one before it, and the grid under the slider shows which emails Mail Pro brings into Odoo:
 
    | Level | What comes into Odoo |

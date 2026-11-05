@@ -33,8 +33,7 @@ matches your Odoo (see [Installation](getting-started/installation.md)).
 | Feature | Description |
 |---------|-------------|
 | Send From dropdown | Choose which mailbox to send from in the composer |
-| Test send | One button on every mailbox and on My Preferences, so a broken address is found before a customer finds it |
-| Sync level | One ladder per mailbox: replies only, also your own replies from Sent, also new email from contacts, also new email from everyone. Every minute |
+| Sync level | Per mailbox: replies, then also your sent replies, then new conversations from existing contacts, then from new contacts. Every minute |
 | Reply threading | Replies attach to the correct record |
 | Personal mailboxes | Auto-created when users connect |
 | Shared mailboxes | Team addresses visible to all users |
