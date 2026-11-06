@@ -833,9 +833,11 @@ class Checks:
             self.call('ir.config_parameter', 'set_param', 'database.is_neutralized', False)
 
     def inbox_no_mailbox(self):
-        """A database with no mailbox yet opens the Inbox on the way to step
-        4, one line and one button, not on chatter mail: on a fresh Odoo.sh
-        database it opened on OdooBot's "Welcome to Odoo!" (3 Nov)."""
+        """A database with no mailbox yet opens the Inbox on the way back to
+        the setup checklist, one line and one button, not on chatter mail: on
+        a fresh Odoo.sh database it opened on OdooBot's "Welcome to Odoo!"
+        (3 Nov). The button is Finish setup, to Settings, Mail Pro: a mailbox
+        needs the provider before it (6 Nov)."""
         action = dict(module_menu_actions(self.call)).get('Inbox')
         page = self.page
         mailboxes = self.call('pan.mail.mailbox', 'search', [])
@@ -854,18 +856,17 @@ class Checks:
             buttons = [b.inner_text().strip() for b in
                        page.query_selector_all('.o_mailpro_gate_no_mailbox button')
                        if b.is_visible()]
-            if buttons != ['Add a mailbox']:
-                self.fail(f'the no-mailbox Inbox offers {buttons}, expected "Add a mailbox"')
+            if buttons != ['Finish setup']:
+                self.fail(f'the no-mailbox Inbox offers {buttons}, expected "Finish setup"')
                 return
             page.click('.o_mailpro_gate_no_mailbox button')
             try:
-                page.wait_for_selector('.o_list_view', timeout=30000)
+                page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
+                                       timeout=60000)
             except Exception:
-                self.fail(f'"Add a mailbox" did not open the Mailboxes list; it is on {page.url}')
+                self.fail(f'"Finish setup" did not open the Mail Pro settings; '
+                          f'it is on {page.url}')
                 return
-            title = ' '.join(page.inner_text('.o_control_panel .o_breadcrumb').split())
-            if 'Mailboxes' not in title:
-                self.fail(f'"Add a mailbox" opened "{title}", not Mailboxes')
             self.error_free('the no-mailbox Inbox')
         finally:
             self.call('pan.mail.mailbox', 'write', mailboxes, {'active': True})
