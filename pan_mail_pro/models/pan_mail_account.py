@@ -314,21 +314,8 @@ class PanMailAccount(models.Model):
             ('user_id', '=', user.id), ('provider', '=', provider),
         ], limit=1)
 
-        vals = {'access_token': access_token, 'token_expiry': token_expiry}
-        if refresh_token:
-            vals['refresh_token'] = refresh_token
-        now = fields.Datetime.now()
-        vals.update({'connected_date': now, 'verified_date': now})
-        if scopes is not None:
-            vals['granted_scopes'] = scopes or False
-        if registration:
-            vals['registration'] = registration
-        for key, field_name in (('provider_user_id', 'provider_user_id'),
-                                ('principal_name', 'principal_name'),
-                                ('name', 'identity_name'),
-                                ('tenant_id', 'tenant_id')):
-            if identity and identity.get(key) is not None:
-                vals[field_name] = identity[key]
+        vals = self._sign_in_vals(access_token, refresh_token, token_expiry,
+                                  identity, scopes, registration)
 
         if account:
             if email and account.email and email.lower() != account.email.lower():
@@ -354,6 +341,56 @@ class PanMailAccount(models.Model):
             vals.update({'provider': provider, 'user_id': user.id, 'email': email})
             account = self.create(vals)
         return account
+
+    @api.model
+    def _store_address_tokens(self, provider, email, access_token, refresh_token,
+                              token_expiry, identity=None, scopes=None):
+        """Upsert the tokens of an address that is its own account.
+
+        A Gmail shared address (sales@) is a Workspace user of its own, so it
+        sends and reads with its own sign-in and nobody's in Odoo
+        (`user_id` empty, `GoogleGmailClient._service_account`). A mailbox
+        manager signs in as that address from the mailbox form; the caller
+        has already checked that the provider vouched for exactly `email`.
+        """
+        account = self.sudo().with_context(active_test=False).search([
+            ('provider', '=', provider), ('user_id', '=', False),
+            ('email', '=ilike', email),
+        ], limit=1)
+        vals = self._sign_in_vals(access_token, refresh_token, token_expiry,
+                                  identity, scopes, registration='own')
+        if account:
+            vals['active'] = True
+            account.write(vals)
+            return account
+        vals.update({'provider': provider, 'user_id': False, 'email': email})
+        return self.sudo().create(vals)
+
+    @api.model
+    def _sign_in_vals(self, access_token, refresh_token, token_expiry,
+                      identity, scopes, registration):
+        """What a sign-in round writes on an account, whoever it belongs to.
+
+        refresh_token only when present: Google returns it on the first
+        consent and not on a later one, and an empty value would disconnect
+        the account.
+        """
+        vals = {'access_token': access_token, 'token_expiry': token_expiry}
+        if refresh_token:
+            vals['refresh_token'] = refresh_token
+        now = fields.Datetime.now()
+        vals.update({'connected_date': now, 'verified_date': now})
+        if scopes is not None:
+            vals['granted_scopes'] = scopes or False
+        if registration:
+            vals['registration'] = registration
+        for key, field_name in (('provider_user_id', 'provider_user_id'),
+                                ('principal_name', 'principal_name'),
+                                ('name', 'identity_name'),
+                                ('tenant_id', 'tenant_id')):
+            if identity and identity.get(key) is not None:
+                vals[field_name] = identity[key]
+        return vals
 
     @api.model
     def _retire_personal_mailbox(self, user, email):
