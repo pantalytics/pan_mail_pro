@@ -61,15 +61,15 @@ through) needs nothing beyond the permissions above.
 
 | Scope | Purpose |
 |-------|---------|
-| `openid` | Identifies the user during the callback |
-| `email` | Reads the address that just signed in |
-| `https://www.googleapis.com/auth/gmail.modify` | Read incoming mail and label it |
-| `https://www.googleapis.com/auth/gmail.send` | Send mail |
+| `openid`, `email` | Which Workspace account just signed in |
+| `https://www.googleapis.com/auth/gmail.modify` | Read, label and send mail, and keep drafts |
 
-`gmail.modify` and `gmail.send` are restricted scopes. Mail Pro never asks for
-`https://mail.google.com/` (full mailbox control), because it never deletes
-anything. A shared address is its own Workspace account and grants the same
-scopes once, for itself.
+`gmail.modify` is a restricted scope. It covers sending, so Mail Pro does not
+ask for `gmail.send` as well (it did before 19.0.40.0.0; a grant from then
+keeps working). It never asks for `https://mail.google.com/`, which would also
+allow deleting mail for good. The OAuth client is Internal to your Workspace,
+so no account outside it can grant anything. A shared address is its own
+Workspace account and grants the same scopes once, for itself.
 
 #### IMAP/SMTP
 
@@ -119,8 +119,10 @@ over the stored parameter and nothing is written to `ir.config_parameter`.
 - **Microsoft 365:** each user authenticates with their own account and needs
   **SendAs permission** on the shared address. No shared credentials.
 - **Google Workspace:** the shared address is its own Workspace account,
-  authorized once by an administrator. Its refresh token is stored like any
-  other, with no Odoo user attached.
+  signed in once by a mailbox manager with **Sign in as this address** on the
+  mailbox. Mail Pro stores the tokens only when Google names exactly that
+  address. Its refresh token is stored like any other, with no Odoo user
+  attached.
 - **IMAP/SMTP:** the address's login and password, entered by an administrator
   and stored encrypted.
 
