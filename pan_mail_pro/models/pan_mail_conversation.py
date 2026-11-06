@@ -259,12 +259,18 @@ class PanMailConversation(models.AbstractModel):
         branch cannot see is one whose contact-only mail they may not read
         anyway; its linked mail still passes on the third branch, under
         Odoo's own rule on the record.
+
+        A recipient passes too. The dedup files a mail two colleagues received
+        in one of their mailboxes, and the other one's copy puts its owner on
+        `partner_ids` (`pan.mail.fetcher._note_copy`): mail that reached you
+        is yours to read, whichever mailbox the sync filed it under (#435).
         """
-        return ['|', '|',
+        return ['|', '|', '|',
                 ('x_mailbox_id', '=', False),
                 ('x_mailbox_id', 'any', ['|', ('mailbox_type', '!=', 'personal'),
                                          ('owner_user_id', '=', self.env.user.id)]),
-                ('model', '!=', 'res.partner')]
+                ('model', '!=', 'res.partner'),
+                ('partner_ids', 'in', self.env.user.partner_id.ids)]
 
     def _base_domain(self, mailbox_id=None, partner_id=None, domain=None,
                      in_a_mailbox=False):

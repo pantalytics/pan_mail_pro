@@ -166,7 +166,7 @@ mailbox that predates them.
    shows the exact URL to paste
 2. Check the client secret's expiry in the Azure Portal or Google Cloud Console
 3. Microsoft 365: grant admin consent for the API permissions. Google: check
-   the scopes on the consent screen
+   the Gmail API is enabled and the client's Audience is Internal
 
 ### Token refresh failing
 
