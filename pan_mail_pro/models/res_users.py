@@ -304,7 +304,8 @@ class ResUsers(models.Model):
         return {
             'type': 'ir.actions.act_url',
             'url': client.get_authorization_url(
-                oauth_redirect_uri(self.env, provider), state=state),
+                oauth_redirect_uri(self.env, provider), state=state,
+                login_hint=account.email or None),
             'target': 'self',
         }
 

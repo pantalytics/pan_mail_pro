@@ -179,8 +179,16 @@
                     <div class="alert alert-danger mt-3" role="alert"
                          invisible="health_status == 'healthy'">
                         <field name="status_message" nolabel="1" readonly="1"/>
+                        <field name="signs_in_as_itself" invisible="1"/>
+                        <!-- Gmail's shared address is its own account: the
+                             way back is signing in as it, not trying again. -->
+                        <button name="action_sign_in_as_address" type="object"
+                                string="Sign in as this address"
+                                class="btn-primary btn-sm ms-2"
+                                invisible="not signs_in_as_itself"/>
                         <button name="action_sync_now" type="object" string="Try again"
-                                class="btn-secondary btn-sm ms-2"/>
+                                class="btn-secondary btn-sm ms-2"
+                                invisible="signs_in_as_itself"/>
                     </div>
                 </sheet>
             </form>

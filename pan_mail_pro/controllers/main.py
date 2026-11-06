@@ -2,7 +2,7 @@
 import logging
 
 from odoo import http, _
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.http import request
 
 from ..models.mail_provider_client import (
@@ -27,6 +27,11 @@ _logger = logging.getLogger(__name__)
 # proof it produces is bound to the browser that asked for it.
 VERIFY_SESSION_KEY = 'pan_mail_verify'
 
+# A mailbox manager signing in as a shared address that is its own account
+# (Gmail's sales@): the nonce, the mailbox, and nothing else. Same reason
+# for the session as above, and good once.
+ADDRESS_SIGN_IN_KEY = 'pan_mail_address_sign_in'
+
 # What a silent sign-in (`prompt=none`) answers when it would have had to ask:
 # both providers' words for "come back with a screen".
 SILENT_REFUSALS = ('login_required', 'interaction_required', 'consent_required',
@@ -47,6 +52,11 @@ def _sign_in_back():
     everybody else."""
     home = SETTINGS_URL if request.env.user.has_group('base.group_system') else INBOX_URL
     return _safe_back(request.session.get(SIGN_IN_BACK_KEY), home)
+
+
+def _mailbox_url(mailbox):
+    """The mailbox's own form, where an address sign-in starts and ends."""
+    return '/odoo/action-pan_mail_pro.action_pan_mail_mailbox/%d' % mailbox.id
 
 
 def _result_page(success, title, message, action_url=None, action_label=None, back=None):
@@ -73,9 +83,11 @@ class MailProConnectController(http.Controller):
 
     @http.route('/mail_pro/connect', type='http', auth='user', website=True)
     def connect_mailbox(self, provider=None, verify=None, mailbox_id=None,
-                        back=None, admin_consent=None, **kwargs):
+                        back=None, admin_consent=None, as_address=None, **kwargs):
         if verify:
             return self._start_verify(mailbox_id, back, silent=True)
+        if as_address:
+            return self._start_address_sign_in(mailbox_id)
         if admin_consent:
             return self._start_admin_consent()
         # `get_provider_client` hands back a *recordset*, and an empty one is
@@ -116,6 +128,45 @@ class MailProConnectController(http.Controller):
             url, _state = row._pantalytics_sign_in(admin_consent=True)
         except UserError as error:
             return _result_page(False, _('Approval not started'), str(error))
+        return request.redirect(url, local=False)
+
+    @staticmethod
+    def _start_address_sign_in(mailbox_id):
+        """Send a mailbox manager to the provider's sign-in as the shared
+        address itself (`pan.mail.mailbox.action_sign_in_as_address`).
+
+        The address is the hint, and the account chooser is forced: the
+        browser is usually signed in as the manager, and their own sign-in
+        coming back here is the mistake this round must not make quietly.
+        `consent` as well, or Google hands back no refresh token.
+        """
+        try:
+            mailbox_id = int(mailbox_id)
+        except (TypeError, ValueError):
+            return request.redirect(SETTINGS_URL)
+        mailbox = request.env['pan.mail.mailbox'].browse(mailbox_id).exists()
+        if not mailbox:
+            return request.redirect(SETTINGS_URL)
+        back = _mailbox_url(mailbox)
+        try:
+            mailbox._check_manager()
+            if not mailbox.signs_in_as_itself:
+                raise UserError(_('%s is not an address that signs in as itself.')
+                                % mailbox.email)
+            License = request.env['pan.mail.license']
+            if not License.sync_allowed() and not mailbox._get_client(
+                    ).resolve_receiving_account(mailbox):
+                raise UserError(License.not_allowed_error())
+            client = mailbox._get_client()
+            state = client.generate_oauth_state()
+            url = client.get_authorization_url(
+                oauth_redirect_uri(request.env, mailbox.provider), state=state,
+                login_hint=mailbox.email, prompt='select_account consent')
+        except (UserError, AccessError) as error:
+            return _result_page(False, _('Connection Failed'), str(error), back=back)
+        request.session[ADDRESS_SIGN_IN_KEY] = {
+            'state': state, 'mailbox_id': mailbox.id, 'provider': mailbox.provider,
+        }
         return request.redirect(url, local=False)
 
     @classmethod
@@ -248,6 +299,11 @@ class MailProOAuthController(http.Controller):
                 and pending.get('provider') == provider:
             del request.session[VERIFY_SESSION_KEY]
             return self._finish_verify(provider, client, pending, kwargs, sign_in)
+        pending = request.session.get(ADDRESS_SIGN_IN_KEY)
+        if pending and kwargs.get('state') and kwargs['state'] == pending.get('state') \
+                and pending.get('provider') == provider and not sign_in:
+            del request.session[ADDRESS_SIGN_IN_KEY]
+            return self._finish_address_sign_in(provider, client, pending, kwargs)
 
         error = kwargs.get('error')
         if error:
@@ -451,6 +507,63 @@ class MailProOAuthController(http.Controller):
                 ours=account.email), back=back)
         Conversation._mark_session_verified(account)
         _logger.info('[OAuth] %s confirmed %s for this session', provider, account.email)
+        return request.redirect(back)
+
+    def _finish_address_sign_in(self, provider, client, pending, kwargs):
+        """Store the sign-in of a shared address on its own account.
+
+        Only when the provider vouches for exactly that address: the
+        manager's own sign-in, or a colleague's, is refused with both
+        addresses and nothing stored. The tokens go on the account with no
+        Odoo user (`pan.mail.account._store_address_tokens`), never on the
+        manager's own row.
+        """
+        mailbox = request.env['pan.mail.mailbox'].browse(pending.get('mailbox_id')).exists()
+        back = _mailbox_url(mailbox) if mailbox else SETTINGS_URL
+        error = kwargs.get('error')
+        if error:
+            _logger.warning('[OAuth] %s refused the address sign-in: %s - %s',
+                            provider, error, kwargs.get('error_description'))
+            return _result_page(False, _('Connection Failed'),
+                                f"{error}: {kwargs.get('error_description')}", back=back)
+        code = kwargs.get('code')
+        if not code or not mailbox:
+            return _result_page(False, _('Connection Failed'),
+                                _('No authorization code received.'), back=back)
+        try:
+            mailbox._check_manager()
+            tokens = self._exchange(client, provider, code, None)
+            identity = client.read_user_info(
+                tokens['access_token'], id_token=tokens.get('id_token'))
+            email = identity.get('email')
+            if not email or email.lower() != (mailbox.email or '').lower():
+                _logger.warning('[OAuth] Address sign-in for %s came back as %s',
+                                mailbox.email, email)
+                return _result_page(False, _('Connection Failed'), _(
+                    'That sign-in is %(theirs)s. Sign in as %(ours)s to connect '
+                    'this mailbox. Nothing was stored.',
+                    theirs=email or _('another account'), ours=mailbox.email),
+                    action_url='/mail_pro/connect?as_address=1&mailbox_id=%d' % mailbox.id,
+                    action_label=_('Sign in again'), back=back)
+            refusal = client.identity_refusal(identity, registration='own')
+            if refusal:
+                request.env['pan.mail.error']._record(
+                    'oauth.tenant_mismatch', level='warning', detail=refusal)
+                return _result_page(False, _('Connection Failed'), refusal, back=back)
+            account = request.env['pan.mail.account'].sudo()._store_address_tokens(
+                provider, mailbox.email, tokens['access_token'],
+                tokens.get('refresh_token'), tokens['token_expiry'],
+                identity=identity, scopes=tokens.get('scope'))
+            with request.env.cr.savepoint():
+                request.env['pan.mail.mailbox'].sudo()._verify_for_account(account)
+        except Exception as exception:
+            _logger.exception('[OAuth] The %s address sign-in broke', provider)
+            request.env['pan.mail.error']._record('oauth.callback_failed', exception)
+            return _result_page(False, _('Connection Failed'), str(exception), back=back)
+        _logger.info('[OAuth] Connected %s account %s as its own sign-in, by %s',
+                     provider, mailbox.email, request.env.user.login)
+        request.session[SIGN_IN_NOTICE_KEY] = {
+            'type': 'success', 'message': _('Signed in as %s') % mailbox.email}
         return request.redirect(back)
 
     @staticmethod
