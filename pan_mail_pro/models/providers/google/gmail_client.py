@@ -43,15 +43,17 @@ _logger = logging.getLogger(__name__)
 GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
-# Restricted scopes. gmail.modify covers reading + labelling incoming, gmail.send
-# covers sending. These are what an "Internal" Workspace app skips CASA for; a
-# public app would need the security assessment. openid/email identify the user
-# during the callback.
+# The least the client needs. gmail.modify is every call it makes: read, label,
+# mark read, trash, drafts, send, the profile and the send-as list ("Read,
+# compose, and send emails", no permanent delete). gmail.send was asked for
+# too until 19.0.40.0.0 and added nothing modify does not cover. gmail.modify
+# is restricted, which an "Internal" Workspace app may use without Google's
+# verification or the CASA assessment. openid/email identify the sign-in
+# (`sub`, `hd`, the address) during the callback.
 GOOGLE_SCOPES = [
     'openid',
     'email',
     'https://www.googleapis.com/auth/gmail.modify',
-    'https://www.googleapis.com/auth/gmail.send',
 ]
 
 # Paging for the message list. 500 is Gmail's own maximum for `maxResults`, and
