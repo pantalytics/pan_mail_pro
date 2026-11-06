@@ -4,6 +4,7 @@ from . import ledger  # second: the error ledger in the test's transaction
 from . import test_mail_account
 from . import test_account_migration
 from . import test_google_provider
+from . import test_gmail_address_sign_in
 from . import test_imap_provider
 from . import test_menus
 from . import test_microsoft_provider

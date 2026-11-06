@@ -15,6 +15,7 @@ from typing import NamedTuple
 from markupsafe import Markup
 
 from odoo import models, api, fields, _
+from odoo.fields import Command
 from odoo.exceptions import UserError
 
 from .mail_provider_client import (
@@ -640,11 +641,39 @@ class PanMailFetcher(models.AbstractModel):
         exactly the case it was written for. The gate above pays no provider
         round-trip for the messages this one refuses; see `_may_be_own_copy`.
         """
-        if self._duplicate_of(ctx):
+        duplicate = self._duplicate_of(ctx)
+        if duplicate:
+            self._note_copy(ctx.get('mailbox'), duplicate)
             return Skip(
                 'duplicate', _('This message is already in Odoo.'), quiet=True,
             )
         return None
+
+    def _note_copy(self, mailbox, messages):
+        """A second personal mailbox holds this mail: its owner received it.
+
+        The dedup keeps one `mail.message`, in whichever mailbox fetched it
+        first. To Daniel, Cc Rutger, and the copy lives in Daniel's personal
+        mailbox, where `_whose_domain` hides contact-only mail from everyone
+        but Daniel -- Rutger included, who has the same mail in his own inbox
+        (#435). So the owner of every other mailbox that meets it goes on
+        `partner_ids`, Odoo's own field for who a mail reached, and the rule
+        lets a recipient through. Nothing else moves: no notification, no
+        follower, no second message.
+
+        Asked on a refusal that ends most of every run, so it writes only when
+        something is missing, and reads nothing it was not handed.
+        """
+        if not mailbox or mailbox.mailbox_type != 'personal':
+            return
+        owner = mailbox.owner_user_id
+        if not owner.partner_id:
+            return
+        missing = messages.sudo().filtered(
+            lambda m: m.x_mailbox_id != mailbox
+            and owner.partner_id not in m.partner_ids)
+        if missing:
+            missing.write({'partner_ids': [Command.link(owner.partner_id.id)]})
 
     def _duplicate_of(self, ctx):
         """The `mail.message` this Message-ID already belongs to, resolved once.

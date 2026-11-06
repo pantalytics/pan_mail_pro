@@ -180,9 +180,14 @@ class PanMailMailbox(models.Model):
 
         A Microsoft shared mailbox that only sends borrows the author's token,
         so it needs none — until it starts reading, which nobody can do on
-        somebody else's behalf without being told whose token to use.
+        somebody else's behalf without being told whose token to use. A
+        Gmail or IMAP shared mailbox borrows nobody's: it sends with its own
+        account or not at all, so it needs one from the start.
         """
         self.ensure_one()
+        if self.mailbox_type == 'shared' and self.provider \
+                and not self._get_client().supports_shared_mailbox:
+            return True
         return self.mailbox_type == 'personal' or self.is_notification_mailbox or self._syncs_more_than_replies()
 
     def _has_working_credentials(self):
@@ -538,6 +543,38 @@ class PanMailMailbox(models.Model):
              'unread. Throttles the refresh the Inbox asks for on every visit.',
     )
 
+    # A shared address that is its own account at a provider with a sign-in
+    # screen (Gmail): its credentials come from signing in as the address
+    # itself, on this form (`action_sign_in_as_address`). Microsoft sends from
+    # a shared mailbox with a colleague's sign-in, IMAP with a typed password.
+    signs_in_as_itself = fields.Boolean(compute='_compute_signs_in_as_itself')
+
+    @api.depends('mailbox_type', 'provider')
+    def _compute_signs_in_as_itself(self):
+        for record in self:
+            client = record._get_client() if record.provider else None
+            record.signs_in_as_itself = bool(
+                client is not None and record.mailbox_type == 'shared'
+                and client.uses_oauth and not client.supports_shared_mailbox)
+
+    def action_sign_in_as_address(self):
+        """Sign in at the provider as this shared address, for its own account.
+
+        A mailbox manager's act: the tokens stored are the company's
+        mailbox, not the person's who pressed it. The round starts at
+        `/mail_pro/connect` so its proof lives in this browser's session,
+        and comes back to this form.
+        """
+        self.ensure_one()
+        self._check_manager()
+        if not self.signs_in_as_itself:
+            raise UserError(_('%s is not an address that signs in as itself.') % self.email)
+        return {
+            'type': 'ir.actions.act_url',
+            'url': '/mail_pro/connect?as_address=1&mailbox_id=%d' % self.id,
+            'target': 'self',
+        }
+
     # -------------------------------------------------------------------------
     # Health Status (computed for list view)
     # -------------------------------------------------------------------------
@@ -844,9 +881,19 @@ class PanMailMailbox(models.Model):
         provider = client.provider_label()
 
         if self.mailbox_type == 'shared':
+            if not client.supports_shared_mailbox and client.uses_oauth:
+                # Gmail: a shared address is its own account, so it is
+                # connected by signing in as the address, on this form.
+                return _(
+                    'Shared mailbox "%(email)s" is not signed in yet. On '
+                    '%(provider)s it sends and reads with its own sign-in: press '
+                    'Sign in as this address and sign in to %(provider)s as '
+                    '%(email)s.',
+                    email=self.email, provider=provider,
+                )
             if not client.supports_shared_mailbox:
-                # Gmail and IMAP: a shared address is its own account, so there
-                # is nothing an owner could connect on its behalf.
+                # IMAP: a shared address is its own account, so there is
+                # nothing an owner could connect on its behalf.
                 return _(
                     'Shared mailbox "%(email)s" has no credentials of its own. On '
                     '%(provider)s a shared address is its own account, not a '

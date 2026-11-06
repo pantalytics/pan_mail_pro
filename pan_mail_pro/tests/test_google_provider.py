@@ -384,7 +384,9 @@ class TestGoogleProvider(TransactionCase):
         self.assertIn('access_type=offline', url)
         self.assertIn('prompt=consent', url)
         self.assertIn('gmail.modify', url)
-        self.assertIn('gmail.send', url)
+        # modify covers sending: a second Gmail scope is one more line on the
+        # consent screen and nothing the client calls (19.0.40.0.0).
+        self.assertNotIn('gmail.send', url)
         self.assertIn('state=abc', url)
 
     # ------------------------------------------------------------------ #

@@ -22,8 +22,11 @@ Go to **Settings → Technical → Email → Mail Pro → Mailboxes** (the arrow
 - **Visibility:** All users
 - **Credentials (Microsoft 365):** each sender uses their own token, and needs
   SendAs permission in Microsoft 365
-- **Credentials (Gmail, IMAP/SMTP):** the address has its own account, so the
-  mailbox needs no owner - give the address credentials of its own
+- **Credentials (Gmail):** the address is its own Workspace user, so the
+  mailbox needs no owner. Open it and press **Sign in as this address**, then
+  sign in to Google as that address
+- **Credentials (IMAP/SMTP):** the address has its own account with a login
+  and password
 
 ### The notification mailbox
 
