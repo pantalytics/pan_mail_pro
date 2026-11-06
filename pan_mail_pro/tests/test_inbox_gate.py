@@ -148,8 +148,10 @@ class TestInboxGate(_FakePlatform, TransactionCase):
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestBackFromTheApprovalPage(_FakePlatform, HttpCase):
-    """Approve sends the browser to one fixed path on this Odoo. Where it
-    goes from there is what this session remembered at Connect."""
+    """Approve sends the browser to one fixed path on this Odoo. While setup
+    is not finished it lands on the checklist; after, where this session
+    remembered at Connect. Every case but the first is a finished setup: a
+    reconnect."""
 
     @classmethod
     def setUpClass(cls):
@@ -158,6 +160,9 @@ class TestBackFromTheApprovalPage(_FakePlatform, HttpCase):
 
     def setUp(self):
         super().setUp()
+        ready = patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=True)
+        ready.start()
+        self.addCleanup(ready.stop)
         self._trust()
         self.authenticate('admin', 'admin')
 
@@ -174,6 +179,15 @@ class TestBackFromTheApprovalPage(_FakePlatform, HttpCase):
             response = self.url_open('/mail_pro/pantalytics/return', allow_redirects=False)
         self.assertIn(response.status_code, (302, 303))
         return response.headers['Location']
+
+    def test_while_setup_is_not_done_it_lands_on_the_checklist(self):
+        """Connect is step 1; the provider is step 2, on Settings. The Inbox
+        would only say "No mailbox yet" (Rutger's test, 6 Nov)."""
+        self._connect({'pan_mail_back': INBOX_URL})
+        with patch.object(type(self.env['pan.mail.setup']), 'is_ready', return_value=False):
+            location = self._back()
+        self.assertTrue(location.endswith(SETTINGS_URL), location)
+        self.assertEqual(self.env['pan.mail.license'].current().status, 'active')
 
     def test_connect_on_the_gate_lands_back_in_the_inbox_connected(self):
         action = self._connect({'pan_mail_back': INBOX_URL})
