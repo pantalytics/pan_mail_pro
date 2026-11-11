@@ -3625,6 +3625,15 @@ through `mail.alias`, past every control in §3. Closing the outbound door and
 leaving the inbound one open is not a smaller version of the same act; it is
 the half that lets mail in.
 
+**Except for Email Marketing (#445).** Mass mailings leave through Odoo's own
+SMTP on purpose (`mail.mail.send`), so the takeover must not close that road.
+It leaves the server Email Marketing names as its Dedicated Server switched on
+(`ir.mail_server._marketing_server`), and a campaign is sent under the
+`MARKETING` context key, under which `_find_mail_server` does not offer the
+placeholder. Without that, the placeholder (sequence 0, no from filter) won
+Odoo's choice over a Brevo server added later and every campaign went to
+`invalid.mail-pro.disabled`. Every other mail still meets the placeholder.
+
 **And it is undone on uninstall.** The takeover records the ids of the servers
 it disabled (`pan_mail_pro.smtp_takeover_disabled_ids`); the module's
 `uninstall_hook` (`_restore_smtp_servers`) re-enables exactly those, retires

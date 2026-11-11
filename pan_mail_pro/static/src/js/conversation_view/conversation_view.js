@@ -618,13 +618,9 @@ export class ConversationView extends Component {
         }
     }
 
-    /** Step 4's page, the mailbox list, from the no-mailbox gate. */
-    openMailboxes() {
-        this.action.doAction("pan_mail_pro.action_pan_mail_mailbox");
-    }
-
     /** Settings, Mail Pro: the same URL the OAuth controller and the mailbox
-     *  list send people to, the hash selecting the tab. */
+     *  list send people to, the hash selecting the tab. The setup checklist
+     *  lives there, so the no-mailbox gate opens it too. */
     openConnectSettings() {
         this.action.doAction({
             type: "ir.actions.act_url",
