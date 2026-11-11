@@ -19,6 +19,9 @@ INTERACTIVE_SEND = 'pan_mail_interactive_send'
 # Set by `_send_on_staging` around Odoo's own send: this batch is a copy's
 # mail, routed by us and shown by the host's catcher.
 ON_COPY = 'pan_mail_on_copy'
+# Set around Odoo's own send of an Email Marketing batch: the server it picks
+# is a real one, never the takeover's placeholder (models/ir_mail_server.py).
+MARKETING = 'pan_mail_marketing'
 
 _logger = logging.getLogger(__name__)
 
@@ -147,7 +150,9 @@ class MailMail(models.Model):
         deliberate rather than defensive:
 
         - Mass mailings go via SMTP, because Email Marketing has its own
-          delivery infrastructure (Brevo and friends).
+          delivery infrastructure (Brevo and friends). They carry `MARKETING`,
+          so Odoo picks a real server for them and never the takeover's
+          placeholder (#445).
         - A database with no mailboxes at all has not opted in yet, so Odoo's
           own mail handling stays in charge. That is what keeps demo, QA and a
           fresh install working before anyone has been to Azure.
@@ -197,7 +202,7 @@ class MailMail(models.Model):
         delivered = 0
         if mass_mails:
             _logger.info(f"[Outgoing Mail] Routing {len(mass_mails)} mass mailing email(s) via standard SMTP")
-            super(MailMail, mass_mails).send(
+            super(MailMail, mass_mails.with_context(**{MARKETING: True})).send(
                 auto_commit=auto_commit,
                 raise_exception=raise_exception,
                 post_send_callback=post_send_callback,
