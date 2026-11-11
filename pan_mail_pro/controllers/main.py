@@ -625,9 +625,12 @@ class MailProPantalyticsController(http.Controller):
     """Where the Pantalytics approval page sends the admin back to.
 
     A redirect from our site after Approve, so this is not an OAuth callback
-    and nothing about it is registered anywhere. It collects the key and lands
-    where Connect was pressed (`pan.mail.license._remember_back`): the Inbox
-    for its gate, Settings for Settings' button and for anybody whose session
+    and nothing about it is registered anywhere. It collects the key and,
+    while setup is not finished, lands on Settings, Mail Pro: Connect is step
+    1 of that checklist and the next step (the email provider) is there, so
+    an Inbox with "No mailbox yet" is the wrong place to arrive (Rutger's
+    test, 6 Nov). Once setup is done, a reconnect lands where Connect was
+    pressed (`pan.mail.license._remember_back`), Settings when the session
     does not say.
     """
 
@@ -638,4 +641,6 @@ class MailProPantalyticsController(http.Controller):
             if link:
                 link.collect_on_return()
         back = request.session.pop(CONNECT_BACK_KEY, None)
+        if not request.env['pan.mail.setup'].sudo().is_ready():
+            return request.redirect(SETTINGS_URL)
         return request.redirect(_safe_back(back, SETTINGS_URL))

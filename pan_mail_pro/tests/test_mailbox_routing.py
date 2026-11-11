@@ -27,7 +27,7 @@ from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tools import mute_logger
 
-from odoo.addons.pan_mail_pro.models.mail_mail import RoutingError
+from odoo.addons.pan_mail_pro.models.mail_mail import MARKETING, RoutingError
 
 from .common import MailProTestCase, send_and_capture
 
@@ -372,3 +372,28 @@ class TestMailboxRouting(MailProTestCase):
                    autospec=True, return_value=True):
             mail.send()
         provider_path.assert_not_called()
+
+    def test_a_campaign_reaches_odoo_with_the_marketing_flag(self):
+        """The flag is what keeps the takeover's placeholder out of Odoo's
+        server choice (#445); a campaign sent without it fails at the SMTP
+        connect, far from here."""
+        if 'mailing_id' not in self.env['mail.mail']._fields:
+            self.skipTest('mass_mailing module not installed')
+        mailing = self.env['mailing.mailing'].create({
+            'subject': 'Campaign',
+            'body_html': '<p>Hello</p>',
+            'mailing_model_id': self.env['ir.model']._get('res.partner').id,
+        })
+        mail = self._make_mail()
+        mail.mailing_id = mailing.id
+
+        flags = []
+
+        def odoo_send(records, *args, **kwargs):
+            flags.append(records.env.context.get(MARKETING))
+            return True
+
+        with patch('odoo.addons.mail.models.mail_mail.MailMail.send',
+                   autospec=True, side_effect=odoo_send):
+            mail.send()
+        self.assertEqual(flags, [True])
