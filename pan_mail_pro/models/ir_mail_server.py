@@ -70,10 +70,12 @@ class IrMailServer(models.Model):
         """The server Email Marketing names as its Dedicated Server, or none.
 
         The one server the takeover may not switch off: someone chose it for
-        campaigns, and no mail but a campaign is ever sent through it.
+        campaigns, and no mail but a campaign is ever sent through it. Read
+        off `mass_mailing.mail_server_id` alone, the parameter Odoo's own
+        archive guard reads: it refuses to archive that server, so the
+        takeover used to fail the first mailbox's create on it.
         """
-        params = self.env['ir.config_parameter'].sudo()
-        server_id = params.get_param('mass_mailing.mail_server_id')
-        if not params.get_param('mass_mailing.outgoing_mail_server') or not str(server_id).isdigit():
+        server_id = self.env['ir.config_parameter'].sudo().get_param('mass_mailing.mail_server_id')
+        if not str(server_id).isdigit():
             return self.browse()
         return self.sudo().with_context(active_test=False).browse(int(server_id)).exists()

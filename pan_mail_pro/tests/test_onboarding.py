@@ -99,15 +99,17 @@ class TestSmtpTakeover(TransactionCase):
             'smtp_port': 587, 'sequence': 20,
         }, **vals))
 
-    def _name_marketing_server(self, server, enabled=True):
+    def _name_marketing_server(self, server):
         params = self.env['ir.config_parameter'].sudo()
-        params.set_param('mass_mailing.outgoing_mail_server', 'True' if enabled else False)
+        params.set_param('mass_mailing.outgoing_mail_server', 'True')
         params.set_param('mass_mailing.mail_server_id', str(server.id))
 
     def test_takeover_keeps_the_dedicated_marketing_server(self):
         """Email Marketing sends through SMTP on purpose (#445). The server
         it names as its Dedicated Server was chosen for campaigns, and nothing
-        else is ever sent through it, so the takeover leaves it on."""
+        else is ever sent through it, so the takeover leaves it on. With
+        mass_mailing installed Odoo also refuses to archive it, which used to
+        fail this create."""
         brevo = self._brevo()
         self._name_marketing_server(brevo)
 
@@ -116,16 +118,6 @@ class TestSmtpTakeover(TransactionCase):
         self.assertTrue(brevo.active)
         self.assertFalse(self.customer_smtp.active)
         self.assertTrue(self.placeholder.active)
-
-    def test_a_server_named_with_the_setting_off_is_taken_over(self):
-        """Odoo keeps the server id when Dedicated Server is switched off.
-        Without the setting nothing says the server is marketing's."""
-        brevo = self._brevo()
-        self._name_marketing_server(brevo, enabled=False)
-
-        self.Mailbox.create({'email': 'info@takeover.test'})
-
-        self.assertFalse(brevo.active)
 
     def test_a_campaign_never_picks_the_placeholder(self):
         """The placeholder sits at sequence 0 with no from filter, so Odoo's
