@@ -69,6 +69,9 @@ See [Security](security.md) for the full picture.
 Once mail is flowing, [Where Mail Lands](configuration/where-mail-lands.md)
 explains how to check it is going where you expect.
 
+Sending newsletters or campaigns? [Mailboxes and Email Marketing](configuration/marketing-mail.md)
+explains which mail goes through your mailbox and which through a service like Brevo.
+
 ## Need Help?
 
 - Check the [Troubleshooting](troubleshooting.md) guide
