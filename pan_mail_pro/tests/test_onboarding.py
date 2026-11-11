@@ -22,7 +22,7 @@ from odoo.exceptions import UserError, ValidationError
 from odoo.tests import TransactionCase, tagged
 from odoo.tools import mute_logger
 
-from odoo.addons.pan_mail_pro.models.mail_mail import NOTIFICATION_PENDING_REASON
+from odoo.addons.pan_mail_pro.models.mail_mail import MARKETING, NOTIFICATION_PENDING_REASON
 from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import (
     SMTP_PLACEHOLDER_VALUES,
     SMTP_PLACEHOLDER_XMLID,
@@ -92,6 +92,57 @@ class TestSmtpTakeover(TransactionCase):
         self.Mailbox.create({'email': 'sales@takeover.test'})
 
         self.assertTrue(self.customer_smtp.active)
+
+    def _brevo(self, **vals):
+        return self.MailServer.create(dict({
+            'name': 'Brevo', 'smtp_host': 'smtp-relay.brevo.com',
+            'smtp_port': 587, 'sequence': 20,
+        }, **vals))
+
+    def _name_marketing_server(self, server, enabled=True):
+        params = self.env['ir.config_parameter'].sudo()
+        params.set_param('mass_mailing.outgoing_mail_server', 'True' if enabled else False)
+        params.set_param('mass_mailing.mail_server_id', str(server.id))
+
+    def test_takeover_keeps_the_dedicated_marketing_server(self):
+        """Email Marketing sends through SMTP on purpose (#445). The server
+        it names as its Dedicated Server was chosen for campaigns, and nothing
+        else is ever sent through it, so the takeover leaves it on."""
+        brevo = self._brevo()
+        self._name_marketing_server(brevo)
+
+        self.Mailbox.create({'email': 'info@takeover.test'})
+
+        self.assertTrue(brevo.active)
+        self.assertFalse(self.customer_smtp.active)
+        self.assertTrue(self.placeholder.active)
+
+    def test_a_server_named_with_the_setting_off_is_taken_over(self):
+        """Odoo keeps the server id when Dedicated Server is switched off.
+        Without the setting nothing says the server is marketing's."""
+        brevo = self._brevo()
+        self._name_marketing_server(brevo, enabled=False)
+
+        self.Mailbox.create({'email': 'info@takeover.test'})
+
+        self.assertFalse(brevo.active)
+
+    def test_a_campaign_never_picks_the_placeholder(self):
+        """The placeholder sits at sequence 0 with no from filter, so Odoo's
+        own choice prefers it over a server added after the takeover, and a
+        campaign went to `invalid.mail-pro.disabled` (#445). Under
+        `MARKETING` it is not a candidate; every other caller still meets it."""
+        self.Mailbox.create({'email': 'info@takeover.test'})
+        brevo = self._brevo()
+        Server = self.env['ir.mail_server'].sudo()
+        servers = Server.search([], order='sequence')
+        campaign = Server.with_context(**{MARKETING: True})
+
+        self.assertEqual(Server._find_mail_server('news@takeover.test', servers)[0],
+                         self.placeholder, 'outside a campaign nothing changes')
+        self.assertEqual(campaign._find_mail_server('news@takeover.test', servers)[0], brevo)
+        self.assertEqual(campaign._find_mail_server('news@takeover.test')[0], brevo,
+                         'also when Odoo leaves the search to the server model')
 
     @mute_logger('odoo.addons.pan_mail_pro.models.pan_mail_mailbox')
     def test_a_deleted_placeholder_is_recreated_before_the_takeover(self):

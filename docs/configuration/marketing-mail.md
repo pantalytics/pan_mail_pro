@@ -37,14 +37,13 @@ that for a handful of people; anything bigger belongs in Email Marketing.
 2. In Odoo, go to **Settings → Technical → Email → Outgoing Mail Servers** and
    add the server: `smtp-relay.brevo.com`, port 587, TLS, your Brevo login and
    the SMTP key.
-3. Go to **Settings → Email Marketing**, turn on **Dedicated Server** and pick
-   the Brevo server.
 
-Step 3 is the one that matters. Mail Pro switches off every other outgoing
-mail server when your first mailbox is created, so mail cannot leave through
-two doors at once. A campaign with no dedicated server has nowhere to go and
-fails. With the dedicated server set, every campaign goes through Brevo, and
-everything else keeps going through your mailboxes.
+That's all. Campaigns go out through Brevo, and every other mail keeps going
+through your mailboxes. Mail Pro never sends a campaign through a mailbox, and
+never sends anything else through Brevo.
 
-**Already had Brevo before Mail Pro?** Mail Pro switched that server off too.
-Open it under Outgoing Mail Servers, tick **Active** again, then do step 3.
+**Already had Brevo before Mail Pro?** When your first mailbox is created,
+Mail Pro switches off every other outgoing mail server, so mail cannot leave
+through two doors. The one exception is the server Email Marketing names as
+its **Dedicated Server** (Settings → Email Marketing). If your Brevo server was
+switched off, open it under Outgoing Mail Servers and tick **Active** again.
