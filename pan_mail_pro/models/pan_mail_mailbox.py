@@ -1167,7 +1167,10 @@ class PanMailMailbox(models.Model):
             # shut", and with no placeholder it would be every door shut.
             placeholder = self._recreate_smtp_placeholder()
 
-        others = MailServer.search([('active', '=', True)]) - placeholder
+        # The server Email Marketing names as its Dedicated Server stays on:
+        # campaigns leave through SMTP on purpose (#445), nothing else does.
+        others = MailServer.search([('active', '=', True)]) - placeholder \
+            - MailServer._marketing_server()
         # Remembered, empty or not, so an uninstall can give exactly these
         # back and not every server somebody switched off on purpose.
         IrConfigParameter.set_param(
