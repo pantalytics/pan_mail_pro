@@ -296,6 +296,49 @@ class TestAfterTheSend(MailProTestCase):
         self.assertIn('asked to wait', mail.failure_reason)
         self.assertGreater(mail.scheduled_date, before + timedelta(seconds=60))
 
+    @staticmethod
+    def _send_unavailable(client_self, mail_record, mailbox, account, reply_context=None):
+        from odoo.addons.pan_mail_pro.models.mail_provider_client import ERROR_UNAVAILABLE
+        return {'success': False, 'error': '502 Server Error: Bad Gateway',
+                'error_code': ERROR_UNAVAILABLE}
+
+    def test_a_provider_outage_waits_on_the_queue(self):
+        """A fresh mail that met an outage stays outgoing, five minutes out,
+        and its author sees no failure yet."""
+        mail = self._mail()
+        before = fields.Datetime.now()
+        with patch.object(type(self.env['microsoft.graph.client']), 'send_message',
+                          self._send_unavailable):
+            mail.with_context(pan_mail_interactive_send=True).send()  # no raise
+        self.assertEqual(mail.state, 'outgoing')
+        self.assertIn('Bad Gateway', mail.failure_reason)
+        self.assertGreaterEqual(mail.scheduled_date, before + timedelta(minutes=5))
+        self.assertLessEqual(mail.scheduled_date, fields.Datetime.now() + timedelta(minutes=5))
+
+    def test_the_wait_grows_with_the_mails_age(self):
+        mail = self._mail()
+        self.env.cr.execute("UPDATE mail_mail SET create_date = now() at time zone 'UTC' "
+                            "- interval '30 minutes' WHERE id = %s", (mail.id,))
+        mail.invalidate_recordset(['create_date'])
+        before = fields.Datetime.now()
+        with patch.object(type(self.env['microsoft.graph.client']), 'send_message',
+                          self._send_unavailable):
+            mail.send()
+        self.assertEqual(mail.state, 'outgoing')
+        self.assertGreaterEqual(mail.scheduled_date, before + timedelta(minutes=29))
+
+    def test_an_outage_longer_than_the_limit_fails_the_mail(self):
+        """After four hours the author has to know: red envelope, Retry."""
+        mail = self._mail()
+        self.env.cr.execute("UPDATE mail_mail SET create_date = now() at time zone 'UTC' "
+                            "- interval '5 hours' WHERE id = %s", (mail.id,))
+        mail.invalidate_recordset(['create_date'])
+        with patch.object(type(self.env['microsoft.graph.client']), 'send_message',
+                          self._send_unavailable):
+            mail.send()
+        self.assertEqual(mail.state, 'exception')
+        self.assertIn('unavailable for 4 hours', mail.failure_reason)
+
     def test_a_caller_who_asks_for_the_exception_gets_odoos_own(self):
         """auth_signup sends the invitation with raise_exception=True and
         catches MailDeliveryException, creating the user anyway. A UserError

@@ -267,6 +267,12 @@ ERROR_NO_RECIPIENTS = 'no_recipients'
 # result with this code carries `retry_after` (seconds); `mail.mail` keeps the
 # mail outgoing until then instead of failing it.
 ERROR_THROTTLED = 'throttled'
+# The provider was down (a 5xx, a timeout, no connection) *before* it accepted
+# the mail, so trying again cannot send it twice. `mail.mail` keeps the mail
+# outgoing and tries again later, up to `OUTAGE_GIVE_UP` after it was created.
+# A failure on the send call itself is never this code: whether that mail left
+# is unknown, and a duplicate to a customer is worse than a Retry click.
+ERROR_UNAVAILABLE = 'unavailable'
 # The provider refused the send on *rights*: the sign-in may not send as the
 # address. Exchange says ErrorSendAsDenied / ErrorAccessDenied /
 # ErrorItemNotFound, Gmail says "Delegation denied", an SMTP relay refuses
