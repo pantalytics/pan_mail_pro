@@ -210,8 +210,8 @@ class TestErrorLedger(TransactionCase):
     def test_the_heartbeat_stores_the_codes_it_carried(self):
         self.assertTrue(hasattr(PanMailLicense, '_report_errors_if_new'))
         source = (MODULE / 'models' / 'pan_mail_license.py').read_text()
-        self.assertIn("self.errors_reported = ','.join(sorted(e['code'] for e in report['errors']))",
-                      source)
+        self.assertIn("self.errors_reported = errors_signature(report['errors'])", source)
+        self.assertIn('signature = errors_signature(self._error_report(since))', source)
 
     # --- the browser side ----------------------------------------------------
 
