@@ -258,6 +258,12 @@ def _count(value):
         return 0
 
 
+def errors_signature(errors):
+    """The codes of a heartbeat's `errors`, as one string to compare two
+    heartbeats by. Counts are left out: a count moving is not news."""
+    return ','.join(sorted(e['code'] for e in errors))
+
+
 def setup_signature(answers):
     """The answered setup steps as one string, to compare two heartbeats by.
 
@@ -910,8 +916,9 @@ class PanMailLicense(models.Model):
         """Report in when a kind of failure appears that the last day had not.
 
         Same shape as `_report_setup_if_changed`: the fetch cron asks every
-        minute, the signature is the set of error codes of the last 24 hours,
-        and it is stored on the way out so an unreachable server costs one
+        minute, the signature is the set of codes the heartbeat would carry
+        (`_error_report`: the last 24 hours, a stale mailbox, the cap), and
+        it is stored on the way out so an unreachable server costs one
         attempt, not one a minute. A code ageing out changes the set too, so
         the bound is a handful of heartbeats a day, never one per failure: a
         mailbox failing a hundred times today is one code, reported once.
@@ -920,7 +927,7 @@ class PanMailLicense(models.Model):
         if not link or not link.key_encrypted:
             return
         since = fields.Datetime.now() - timedelta(hours=24)
-        signature = self.env['pan.mail.error'].signature_since(since)
+        signature = errors_signature(self._error_report(since))
         if signature == (link.errors_reported or ''):
             return
         if link.last_check and fields.Datetime.now() - link.last_check < timedelta(
@@ -956,7 +963,7 @@ class PanMailLicense(models.Model):
         # whether the setup answers have moved since we last said so, and an
         # attempt that never arrives must not turn into one a minute.
         self.setup_reported = setup_signature(report['setup'])
-        self.errors_reported = ','.join(sorted(e['code'] for e in report['errors']))
+        self.errors_reported = errors_signature(report['errors'])
         try:
             code, body = self._post(
                 '/api/v1/license/heartbeat', report, key=key)
@@ -1108,15 +1115,8 @@ class PanMailLicense(models.Model):
         Mailbox = self.env['pan.mail.mailbox'].sudo()
         mailboxes = Mailbox.search_count([])
         since = fields.Datetime.now() - timedelta(hours=24)
-        # A mailbox whose cron stopped getting through (a worker killed for its
-        # memory, a cron Odoo switched off) is `active` and reads healthy by
-        # state alone. The form already says it is stale; this says it to us.
-        stale = len(Mailbox.search([('state', '=', 'active')]).filtered(
-            lambda mailbox: mailbox._sync_is_stale()))
-        errors = self.env['pan.mail.error'].codes_since(since)
-        if stale:
-            errors = ([{'code': 'incoming.sync_stale', 'count': stale}]
-                      + errors)[:MAX_CODES_REPORTED]
+        errors = self._error_report(since)
+        stale = any(e['code'] == 'incoming.sync_stale' for e in errors)
         rules = self.env['pan.mail.routing.log'].rule_counts_since(since)
         mails = self._mail_counts_since(since)
         body = {
@@ -1166,6 +1166,26 @@ class PanMailLicense(models.Model):
         if database_sees_a_copy(self.env):
             body['staging'] = True
         return body
+
+    @api.model
+    def _error_report(self, since):
+        """The `errors` of the heartbeat: the ledger's codes since `since`,
+        and a stale mailbox in front of them, capped at what the server
+        accepts. `_report_errors_if_new` compares this same list, so a
+        mailbox that stays stale is reported once, not once a minute.
+
+        A mailbox whose cron stopped getting through (a worker killed for its
+        memory, a cron Odoo switched off) is `active` and reads healthy by
+        state alone. The form already says it is stale; this says it to us.
+        """
+        Mailbox = self.env['pan.mail.mailbox'].sudo()
+        stale = len(Mailbox.search([('state', '=', 'active')]).filtered(
+            lambda mailbox: mailbox._sync_is_stale()))
+        errors = self.env['pan.mail.error'].codes_since(since)
+        if stale:
+            errors = ([{'code': 'incoming.sync_stale', 'count': stale}]
+                      + errors)[:MAX_CODES_REPORTED]
+        return errors
 
     @api.model
     def _mail_counts_since(self, since):
