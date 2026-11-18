@@ -13,10 +13,12 @@ moves on a run that read nothing, the cursor does not move with it, and going
 quiet past the threshold is what turns the screen's one sentence on.
 """
 from datetime import timedelta
+from unittest.mock import patch
 
 from odoo import fields
 from odoo.tests import tagged
 
+from odoo.addons.pan_mail_pro.models.pan_mail_license import errors_signature
 from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import STALE_AFTER_MINUTES
 
 from .common import MailProTestCase
@@ -162,3 +164,94 @@ class TestMailboxHeartbeat(MailProTestCase):
         self._checked(1)
         _body, after = self._stale_in_heartbeat()
         self.assertEqual((after or 0), before - 1)
+
+    # ------------------------------------------- reported once, not a minute
+
+    def _pushes(self):
+        """`_report_errors_if_new` as the fetch cron calls it, with a
+        heartbeat that stores what it carried and never reaches a server.
+        `last_check` stays empty, so the one-minute floor cannot hide a
+        report that should not have been sent."""
+        License = self.env['pan.mail.license']
+        link = License.current() or License.sudo().create(
+            {'status': 'active', 'key_encrypted': 'stored-key'})
+
+        def heartbeat(record):
+            record.errors_reported = errors_signature(
+                License._heartbeat_body()['errors'])
+
+        guarded = patch.object(type(License), '_heartbeat_guarded',
+                               autospec=True, side_effect=heartbeat)
+        return License, link, guarded
+
+    def test_a_mailbox_that_stays_stale_is_not_reported_again(self):
+        """The heartbeat carried `incoming.sync_stale` and the check compared
+        the ledger only, so the two never agreed and the cron sent a
+        heartbeat every minute for as long as the mailbox stayed stale."""
+        self._working()
+        self._checked(STALE_AFTER_MINUTES + 5)
+        License, link, guarded = self._pushes()
+        link.write({'errors_reported': errors_signature(
+            License._heartbeat_body()['errors']), 'last_check': False})
+        self.assertIn('incoming.sync_stale', link.errors_reported.split(','))
+        with guarded as heartbeat:
+            for _minute in range(3):
+                License._report_errors_if_new()
+            self.assertEqual(heartbeat.call_count, 0)
+
+    def test_a_mailbox_that_goes_stale_is_reported_once(self):
+        self._working()
+        self._checked(STALE_AFTER_MINUTES + 5)
+        License, link, guarded = self._pushes()
+        link.write({'errors_reported': False, 'last_check': False})
+        with guarded as heartbeat:
+            for _minute in range(3):
+                License._report_errors_if_new()
+            self.assertEqual(heartbeat.call_count, 1)
+            self.assertIn('incoming.sync_stale', link.errors_reported.split(','))
+
+    def test_a_stale_mailbox_that_recovers_is_reported_once(self):
+        self._working()
+        self._checked(STALE_AFTER_MINUTES + 5)
+        License, link, guarded = self._pushes()
+        link.write({'errors_reported': False, 'last_check': False})
+        with guarded as heartbeat:
+            License._report_errors_if_new()
+            self._checked(1)
+            for _minute in range(3):
+                License._report_errors_if_new()
+            self.assertEqual(heartbeat.call_count, 2,
+                             'the stale code going away is news once')
+            self.assertNotIn('incoming.sync_stale', (link.errors_reported or '').split(','))
+
+    def test_a_new_code_beside_a_stale_mailbox_is_still_reported(self):
+        self._working()
+        self._checked(STALE_AFTER_MINUTES + 5)
+        License, link, guarded = self._pushes()
+        link.write({'errors_reported': False, 'last_check': False})
+        with guarded as heartbeat:
+            License._report_errors_if_new()
+            self.env['pan.mail.error']._record('outgoing.send_failed', detail='no')
+            License._report_errors_if_new()
+            License._report_errors_if_new()
+            self.assertEqual(heartbeat.call_count, 2)
+
+    def test_the_code_limit_is_compared_as_it_is_sent(self):
+        """At the cap the stale code pushes the last ledger code out of the
+        heartbeat; the check must leave it out too, or it never agrees."""
+        self._working()
+        self._checked(STALE_AFTER_MINUTES + 5)
+        Error = self.env['pan.mail.error']
+        Error._record('outgoing.send_failed', detail='no')
+        Error._record('outgoing.send_failed', detail='no again')
+        Error._record('oauth.token_revoked', detail='invalid_grant')
+        License, link, guarded = self._pushes()
+        link.write({'errors_reported': False, 'last_check': False})
+        cap = 'odoo.addons.pan_mail_pro.models.pan_mail_license.MAX_CODES_REPORTED'
+        with guarded as heartbeat, patch(cap, 2):
+            for _minute in range(3):
+                License._report_errors_if_new()
+            self.assertEqual(heartbeat.call_count, 1)
+            reported = link.errors_reported.split(',')
+            self.assertEqual(len(reported), 2)
+            self.assertIn('incoming.sync_stale', reported)
