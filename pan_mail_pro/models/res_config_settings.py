@@ -155,6 +155,9 @@ class ResConfigSettings(models.TransientModel):
     ], compute='_compute_license')
     x_license_status = fields.Selection(
         STATUS_SELECTION, string='Status', compute='_compute_license')
+    # The code expired unapproved: step 1 is back to Connect, with one line
+    # on why (#456).
+    x_license_pairing_expired = fields.Boolean(compute='_compute_license')
     x_license_user_code = fields.Char(string='Code', compute='_compute_license')
     x_license_verify_url = fields.Char(string='Approve at', compute='_compute_license')
     x_license_last_error = fields.Char(compute='_compute_license')
@@ -279,7 +282,8 @@ class ResConfigSettings(models.TransientModel):
     @api.depends('company_id')
     def _compute_license(self):
         link = self.env['pan.mail.license'].current()
-        if not link or link.status == 'not_connected':
+        expired = bool(link) and link.pairing_expired()
+        if not link or link.status == 'not_connected' or expired:
             state = 'not_connected'
         elif link.status == 'pending':
             state = 'pending'
@@ -295,6 +299,7 @@ class ResConfigSettings(models.TransientModel):
             record.x_license_workspace_name = workspace or False
             record.x_license_sync_blocked = blocked
             record.x_license_state = state
+            record.x_license_pairing_expired = expired
             record.x_setup_account_done = state == 'connected' and not blocked
             record.x_license_status = link.status or 'not_connected'
             record.x_license_user_code = link.user_code
