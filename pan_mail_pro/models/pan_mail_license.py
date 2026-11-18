@@ -613,6 +613,10 @@ class PanMailLicense(models.Model):
         if status == 'not_connected':
             head = _('Connect this Odoo instance to Pantalytics to use Mail Pro: '
                      'Settings, Mail Pro, Connect to Pantalytics.')
+        elif status == 'pending' and link.pairing_expired():
+            head = _('The code to connect this Odoo instance to Pantalytics '
+                     'expired before it was approved: Settings, Mail Pro, '
+                     'Connect to Pantalytics.')
         elif status == 'pending':
             head = _('The connection to Pantalytics is waiting for approval: '
                      'Settings, Mail Pro, Check approval.')
@@ -839,6 +843,20 @@ class PanMailLicense(models.Model):
             'replay_sample': 0.0,
         })
         return self.settings_action()
+
+    def pairing_expired(self):
+        """A pairing whose code the platform has dropped unapproved.
+
+        The platform prunes an unapproved code once it expires; nothing
+        tells this Odoo, so without this the page said "Waiting for
+        approval" for good, over a code that no longer exists (#456). The
+        usual cause is a person who may not approve: only an administrator
+        of the Pantalytics workspace can. Read, never written: Connect
+        replaces the pairing, so there is nothing to clear first."""
+        self.ensure_one()
+        return bool(
+            self.status == 'pending' and self.pairing_expires_at
+            and self.pairing_expires_at <= fields.Datetime.now())
 
     def _clear_pairing(self):
         self.write({
