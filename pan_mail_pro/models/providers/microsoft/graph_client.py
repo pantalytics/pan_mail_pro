@@ -18,7 +18,7 @@ from ...mail_provider_client import (
     FOLDER_ARCHIVE, FOLDER_DRAFTS, FOLDER_INBOX, FOLDER_JUNK,
     FOLDER_ROLES, FOLDER_SENT, FOLDER_TRASH, UNREAD_CAP,
     MAX_INCOMING_ATTACHMENT_BYTES,
-    ERROR_ACCESS_DENIED, ERROR_THROTTLED,
+    ERROR_ACCESS_DENIED, ERROR_THROTTLED, ERROR_UNAVAILABLE,
     ThrottledError,
     access_shape, decode_jwt_claims, identity_shape, no_recipients_result,
 )
@@ -143,6 +143,17 @@ def _send_result(success, error=None, error_code=None, message_id=None,
         'draft_id': draft_id,
         **extra,
     }
+
+
+def _provider_down(error):
+    """Microsoft did not answer, or answered that it is down: a 5xx, a
+    timeout, a connection that never opened. Not a refusal (4xx), which says
+    something about this mail and will say it again."""
+    response = getattr(error, 'response', None)
+    if response is not None:
+        return response.status_code >= 500
+    return isinstance(error, (requests.exceptions.ConnectionError,
+                              requests.exceptions.Timeout))
 
 
 class MicrosoftGraphClient(models.AbstractModel):
@@ -1164,6 +1175,10 @@ class MicrosoftGraphClient(models.AbstractModel):
         draft_id = None
         headers = None
         sent = False
+        # Flips just before `/send` is posted. A provider outage before it is
+        # safe to try again later; on `/send` itself it is not (see
+        # ERROR_UNAVAILABLE).
+        sending = False
         graph_user_id = mailbox.email
         try:
             # Use the account's delegated token (principle of least privilege)
@@ -1214,6 +1229,7 @@ class MicrosoftGraphClient(models.AbstractModel):
 
             # Step 3: Send the draft
             send_url = f'https://graph.microsoft.com/v1.0/users/{graph_user_id}/messages/{draft_id}/send'
+            sending = True
             send_response = self._request_with_retry(
                 'post', send_url, headers, timeout=30, idempotent=False)
             send_response.raise_for_status()
@@ -1244,6 +1260,8 @@ class MicrosoftGraphClient(models.AbstractModel):
                     pass
 
             _logger.error(f"Failed to send email via Graph API: {error_detail}")
+            if not sending and _provider_down(e):
+                return _send_result(False, error=error_detail, error_code=ERROR_UNAVAILABLE)
             return _send_result(False, error=error_detail)
         except Exception as e:
             _logger.exception("Unexpected error sending email via Graph API")

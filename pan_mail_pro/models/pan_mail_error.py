@@ -78,6 +78,7 @@ CODES = {
     'outgoing.no_route': 'No mailbox could send this mail',
     'outgoing.send_failed': 'The provider refused the send or the send raised',
     'outgoing.throttled': 'The provider asked the send to wait',
+    'outgoing.provider_unavailable': 'The provider was down before it accepted the mail; the send is tried again later',
     'outgoing.sent_copy_failed': 'The mail went out but its copy could not be filed in the Sent folder',
     'oauth.callback_failed': 'The consent round came back and could not be stored',
     'oauth.token_revoked': 'A refresh token was refused for good; the account must reconnect',
