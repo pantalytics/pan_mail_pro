@@ -9,7 +9,9 @@ from odoo import fields, models, api, tools, _
 from odoo.addons.base.models.ir_mail_server import MailDeliveryException
 from odoo.exceptions import AccessError, UserError
 
-from .mail_provider_client import ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, ERROR_THROTTLED
+from .mail_provider_client import (
+    ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, ERROR_THROTTLED, ERROR_UNAVAILABLE,
+)
 from ..compat import notification_status, postprocess_sent_message
 from .neutralization import COPY_FROM_HEADER, database_is_copy
 from .providers.mime_utils import odoo_headers
@@ -30,6 +32,15 @@ _logger = logging.getLogger(__name__)
 # longer one is trimmed to the root plus the nearest ancestors (see
 # `_build_reply_context`).
 REPLY_CHAIN_LIMIT = 10
+# A provider outage (ERROR_UNAVAILABLE) is waited out this long, counted from
+# the mail's creation, before the mail fails and its author sees the red
+# envelope. Mail servers keep trying for days (RFC 5321 says four to five);
+# a person who sent a quote from Odoo needs to know the same afternoon.
+OUTAGE_GIVE_UP = timedelta(hours=4)
+# The wait between tries grows with the mail's age, so it doubles without a
+# counter to store: 5 minutes, 10, 20, 40, then every hour.
+OUTAGE_FIRST_WAIT = timedelta(minutes=5)
+OUTAGE_MAX_WAIT = timedelta(hours=1)
 # How far up the parent chain is *walked* before trimming. Only there to stop
 # pathological data from looping the walk without limit; the `seen` set already
 # guards against cycles.
@@ -657,6 +668,30 @@ class MailMail(models.Model):
                 'outgoing.throttled', level='warning', mailbox=mailbox, account=account,
                 detail=result.get('error'))
             return None
+
+        if result.get('error_code') == ERROR_UNAVAILABLE:
+            # The provider was down before it took the mail. Wait it out on
+            # the queue, like a throttle, until OUTAGE_GIVE_UP; after that the
+            # author has to know, so it fails the ordinary way.
+            age = fields.Datetime.now() - (self.create_date or fields.Datetime.now())
+            if age < OUTAGE_GIVE_UP:
+                wait = min(max(age, OUTAGE_FIRST_WAIT), OUTAGE_MAX_WAIT)
+                self.write({
+                    'failure_reason': result.get('error'),
+                    'scheduled_date': fields.Datetime.now() + wait,
+                })
+                _logger.warning("[Outgoing Mail] Mail %s waits %s: provider unavailable",
+                                self.id, wait)
+                self.env['pan.mail.error']._record(
+                    'outgoing.provider_unavailable', level='warning', mailbox=mailbox,
+                    account=account, detail=result.get('error'))
+                return None
+            hours = int(OUTAGE_GIVE_UP.total_seconds() // 3600)
+            return self._fail(
+                _('The mail provider was unavailable for %(hours)s hours; the mail was '
+                  'not sent. It can be retried from the chatter. (%(error)s)',
+                  hours=hours, error=self._readable_reason(result.get('error') or '')),
+                mailbox=mailbox)
 
         if result.get('error_code') == ERROR_NO_RECIPIENTS:
             # Almost always an internal notification to a partner without an
