@@ -63,6 +63,10 @@ GMAIL_LIST_PAGE_SIZE = 500
 GMAIL_LIST_MAX_PAGES = 100
 
 
+def _same_address(a, b):
+    return bool(a) and (a or '').strip().lower() == (b or '').strip().lower()
+
+
 class GoogleGmailClient(models.AbstractModel):
     """Google Workspace implementation of the `mail.provider.client` contract.
 
@@ -162,18 +166,31 @@ class GoogleGmailClient(models.AbstractModel):
 
     @api.model
     def resolve_receiving_account(self, mailbox):
-        if mailbox.mailbox_type == 'shared':
-            return self._service_account(mailbox)
-        return self.account_for_user(mailbox.owner_user_id)
+        """The sign-in that *is* the mailbox's address, or nothing.
+
+        The Gmail API reads and sends as `users/me`: a token reaches its own
+        mailbox and no other. So the owner's sign-in serves only when it is
+        signed in as this address; any other address, the notification
+        mailbox included, is its own Workspace account (`_service_account`).
+        Lending the owner's token read the owner's inbox under the other
+        address's name and sent as the owner (Dorset, 19 Nov).
+        """
+        own = self.account_for_user(mailbox.owner_user_id) if mailbox.owner_user_id \
+            else self.env['pan.mail.account'].browse()
+        if own and _same_address(own.email, mailbox.email):
+            return own
+        return self._service_account(mailbox)
 
     @api.model
     def _service_account(self, mailbox):
         """The mailbox's own Gmail account — user_id null, keyed on the address."""
-        return self.env['pan.mail.account'].sudo().with_context(active_test=False).search([
+        # Compared in Python, not with `=ilike`: an underscore in an address
+        # is a wildcard there.
+        accounts = self.env['pan.mail.account'].sudo().with_context(active_test=False).search([
             ('provider', '=', self.provider_code()),
             ('user_id', '=', False),
-            ('email', '=', mailbox.email),
-        ], limit=1)
+        ])
+        return accounts.filtered(lambda a: _same_address(a.email, mailbox.email))[:1]
 
     # -------------------------------------------------------------------------
     # Configuration
