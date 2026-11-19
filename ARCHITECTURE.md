@@ -1021,6 +1021,13 @@ account chooser, and the callback stores the tokens on the account with no
 user only when Google names exactly the mailbox's address. Before that the
 only round stored a sign-in on the person who pressed it, so the guide's "sign
 in as sales@" could not be done without disconnecting yourself first.
+On Gmail a token reaches `users/me` and nothing else, so the owner's sign-in
+serves a mailbox only when it is signed in as that address
+(`GoogleGmailClient.resolve_receiving_account`, 19.0.40.2.2). Every other
+address, the notification mailbox included, is its own service account, and
+the screens call it shared: Google types it a `user`, but no person's sign-in
+is behind it. Lending the owner's token read the owner's inbox under the other
+address's name and sent as the owner (Dorset, 19 Nov 2026).
 
 ### Module structure
 

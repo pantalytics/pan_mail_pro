@@ -261,9 +261,9 @@ class PanMailMailbox(models.Model):
         'res.users',
         string='Owner',
         domain="[('x_pan_mail_connected', '=', True)]",
-        help='Their own address makes this their personal mailbox. On any '
-             'other address this is whose credentials read it, where the '
-             'provider needs a person\'s to do so.',
+        help='Owner of their own address: this is their personal mailbox. '
+             'Owner of any other address: their sign-in reads and sends it '
+             '(Microsoft 365). On Google, sign in as the address itself instead.',
         index=True
     )
     owner_is_address = fields.Boolean(
@@ -412,7 +412,7 @@ class PanMailMailbox(models.Model):
             else:
                 record.mailbox_type = record._owner_rule_type()
 
-    @api.depends('address_kind', 'owner_user_id',
+    @api.depends('address_kind', 'owner_user_id', 'provider',
                  'owner_user_id.email', 'owner_user_id.login',
                  'owner_user_id.x_pan_mail_account_ids.email', 'email')
     def _compute_provider_type(self):
@@ -427,6 +427,11 @@ class PanMailMailbox(models.Model):
             kind = ADDRESS_KIND_TYPES.get(record.address_kind)
             if not kind and record.address_kind == 'unknown':
                 kind = record._owner_rule_type()
+            if kind == 'personal' and record.signs_in_as_itself:
+                # Google calls every address that signs in as itself a user.
+                # One with no person's sign-in behind it is the company's
+                # (`GoogleGmailClient._service_account`): shared.
+                kind = 'shared'
             record.provider_type = kind or False
 
     # -------------------------------------------------------------------------
@@ -549,13 +554,29 @@ class PanMailMailbox(models.Model):
     # a shared mailbox with a colleague's sign-in, IMAP with a typed password.
     signs_in_as_itself = fields.Boolean(compute='_compute_signs_in_as_itself')
 
-    @api.depends('mailbox_type', 'provider')
+    @api.depends('provider', 'email', 'owner_user_id', 'owner_user_id.email',
+                 'owner_user_id.login', 'owner_user_id.x_pan_mail_account_ids.email')
     def _compute_signs_in_as_itself(self):
+        """A shared address, and any address the owner is signed in to this
+        provider as somebody else, the notification mailbox included: on
+        Gmail a token reaches its own mailbox only. The owner's own address
+        with no sign-in yet is still theirs to connect."""
         for record in self:
             client = record._get_client() if record.provider else None
-            record.signs_in_as_itself = bool(
-                client is not None and record.mailbox_type == 'shared'
-                and client.uses_oauth and not client.supports_shared_mailbox)
+            if client is None or not client.uses_oauth or client.supports_shared_mailbox:
+                record.signs_in_as_itself = False
+                continue
+            signed_in = record._owner_provider_addresses()
+            address = (record.email or '').strip().lower()
+            record.signs_in_as_itself = address not in signed_in and bool(
+                signed_in or record._owner_rule_type() == 'shared')
+
+    def _owner_provider_addresses(self):
+        """The addresses the owner is signed in to this mailbox's provider as."""
+        self.ensure_one()
+        return {(account.email or '').strip().lower()
+                for account in self.owner_user_id.x_pan_mail_account_ids
+                if account.provider == self.provider and account.email}
 
     def action_sign_in_as_address(self):
         """Sign in at the provider as this shared address, for its own account.
@@ -880,17 +901,17 @@ class PanMailMailbox(models.Model):
         client = self._get_client()
         provider = client.provider_label()
 
+        if self.signs_in_as_itself:
+            # Gmail: an address nobody is signed in as is its own account,
+            # the notification mailbox's included, so it is connected by
+            # signing in as the address, on this form.
+            return _(
+                '"%(email)s" is not signed in yet. On %(provider)s a mailbox '
+                'sends and reads with its own sign-in: press Sign in as this '
+                'address and sign in to %(provider)s as %(email)s.',
+                email=self.email, provider=provider,
+            )
         if self.mailbox_type == 'shared':
-            if not client.supports_shared_mailbox and client.uses_oauth:
-                # Gmail: a shared address is its own account, so it is
-                # connected by signing in as the address, on this form.
-                return _(
-                    'Shared mailbox "%(email)s" is not signed in yet. On '
-                    '%(provider)s it sends and reads with its own sign-in: press '
-                    'Sign in as this address and sign in to %(provider)s as '
-                    '%(email)s.',
-                    email=self.email, provider=provider,
-                )
             if not client.supports_shared_mailbox:
                 # IMAP: a shared address is its own account, so there is
                 # nothing an owner could connect on its behalf.
