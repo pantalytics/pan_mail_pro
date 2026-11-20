@@ -66,6 +66,17 @@ has the feature.
   own sign-in, like Microsoft. It costs a super-admin grant over every
   mailbox in the domain, the opposite of the consent-per-address model.
 
+## Checked against the code
+
+Every Gmail call, field and error the module relies on is in the Google
+table of `provider-probes.md`, with its status against Google's reference.
+The identity handling (`sub` as the key, `hd` from the token, no signature
+check on a token from the token endpoint, `access_type=offline`) matches the
+docs. Two readings were wrong there and are corrected: "Delegation denied" is
+not documented, and a `From:` outside the send-as list is not refused (by
+community report it is rewritten). The cells only a tenant can answer are in
+that file's step-0 list.
+
 ## Sources
 
 - Google, Create a shared inbox: https://knowledge.workspace.google.com/admin/users/create-a-shared-inbox
@@ -79,6 +90,18 @@ has the feature.
 - Community, delegate token sees own mailbox only: https://discuss.google.dev/t/can-gmail-api-access-a-delegated-user-s-mailbox-using-the-main-account-s-access-token/323439
 - Community, Groups have no API to the mailbox: https://discuss.google.dev/t/reading-emails-in-google-groups/286032
 - Third party on the native shared inbox: https://www.keeping.com/content/google-workspace-shared-mailboxes/ , https://www.dragapp.com/blog/google-workspace-shared-mailbox/
+- Google, OpenID Connect (`sub`, `hd`, token validation): https://developers.google.com/identity/openid-connect/openid-connect
+- Google, verify an ID token: https://developers.google.com/identity/gsi/web/guides/verify-google-id-token
+- Google, OAuth web server flow (offline, prompt, login_hint): https://developers.google.com/identity/protocols/oauth2/web-server
+- Gmail API, aliases and signatures: https://developers.google.com/workspace/gmail/api/guides/alias_and_signature_settings
+- Gmail API, getProfile: https://developers.google.com/workspace/gmail/api/reference/rest/v1/users/getProfile
+- Gmail API, scopes: https://developers.google.com/workspace/gmail/api/auth/scopes
+- Gmail API, errors: https://developers.google.com/workspace/gmail/api/guides/handle-errors
+- Admin SDK, users.get and domain_public: https://developers.google.com/workspace/admin/directory/reference/rest/v1/users/get , https://developers.google.com/workspace/admin/directory/v1/guides/manage-users
+- Google, domain-wide delegation: https://knowledge.workspace.google.com/admin/apps/control-api-access-with-domain-wide-delegation
+- Google, OAuth Playground (manual calls with a real token): https://developers.google.com/oauthplayground
+- Community, From rewritten when not a send-as: https://community.latenode.com/t/how-to-customize-sender-address-when-using-gmail-api-service-account-impersonation-in-python/24304
+- Community, "Delegation denied" is a userId mismatch: https://kiwix.lema.org/stackoverflow.com_en_all_2023-11/a/26152909
 - Microsoft, About shared mailboxes: https://learn.microsoft.com/en-us/microsoft-365/admin/email/about-shared-mailboxes
 - Microsoft, convert user mailbox to shared: https://learn.microsoft.com/en-us/microsoft-365/admin/email/convert-user-mailbox-to-shared-mailbox
 - Graph, mailboxSettings: https://learn.microsoft.com/en-us/graph/api/resources/mailboxsettings
