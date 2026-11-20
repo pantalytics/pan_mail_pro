@@ -145,7 +145,13 @@ list, a Microsoft 365 group, a deleted address. Each cell's `error.code` and
 `message` into the tables above, and `tests/test_mailbox_access.py`'s
 fixtures updated where a reading above was wrong.
 
-On a Workspace tenant, through the OAuth Playground with our own client id
+The Workspace tenant is on a domain of its own, not pantalytics.com: that
+domain's MX is Microsoft's, so a Gmail inbox there would never receive mail
+from outside. Business Starter or higher (the native Shared inbox is Business
+editions only), its own OAuth client as an Internal app, three users: two
+people and one shared address.
+
+On that tenant, through the OAuth Playground with our own client id
 (its redirect URI registered; Google's own client revokes refresh tokens
 after 24h): a pending and an accepted send-as alias; an admin-added user
 alias in `sendAs.list`; `messages.list` with `userId` set to a mailbox the
