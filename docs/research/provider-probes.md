@@ -74,12 +74,19 @@ is the only proof of Send As.
 
 ## Google Workspace (Gmail API)
 
+Every Gmail call is `users/me/...` with the sign-in's own token. Checked
+against Google's reference on 20 Nov 2026; why Google has no shared type is in
+`shared-mailboxes.md`.
+
 ### Identity
 
 | Source | Field | Status |
 |--------|-------|--------|
-| id_token (`openid email`) | `sub`, `email`, `hd` | documented (OpenID Connect; `hd` present only on Workspace accounts) |
-| `users/me/profile` | `emailAddress` | observed (`read_user_info`) |
+| id_token (`openid email`) | `sub`: "unique among all Google Accounts and never reused"; the identifier to key on, never `email`, which "could change over time" | documented (OpenID Connect) |
+| id_token | `hd`: "Provided only if the user belongs to a Google Cloud organization"; absent means not a hosted domain. Trusted from the token, never from the `hd` request hint | documented. Which domain a secondary-domain user carries: unverified |
+| id_token signature | not checked: it comes straight from the token endpoint over TLS, which Google says is enough. Passing it on to other components would need the check | documented |
+| `users/me/profile` | `emailAddress`, `messagesTotal`, `threadsTotal`, `historyId`. No type, no delegates | documented, observed (`read_user_info`) |
+| refresh token | only with `access_type=offline`, and only on the first code exchange; `prompt=consent` forces that exchange to count as first | documented (offline); `prompt=consent` is the module's reading |
 
 ### What the address is, and whether this sign-in may send as it
 
@@ -89,20 +96,37 @@ or `mail.google.com`).
 
 | Entry for the address | `address_kind` | `can_send` | Status |
 |-----------------------|----------------|------------|--------|
-| `isPrimary: true` | `user` | yes | documented |
-| `verificationStatus: accepted`, not primary | `alias` | yes | documented |
+| `isPrimary: true` ("the primary address used to login to the account") | `user` | yes | documented. Also true for every shared address: Google has no other type |
+| `verificationStatus: accepted`, not primary | `alias` | yes | documented ("Aliases that don't require verification have a verification status of accepted") |
 | `verificationStatus: pending` | `alias` | no | documented |
 | absent | `none` | no | by construction |
+| a user alias the Workspace admin added | ? | ? | **unverified**: Google does not say whether it is in the list without the user adding it |
 
-Can read: the profile call, on the account's own address only. The Gmail API
-does not expose another user's mailbox to a delegate's OAuth token, so a
-mailbox is read by its own sign-in or not at all.
+Can read: the profile call, on the account's own address only. Google's
+reference accepts any `userId` and does not say what another address returns;
+community reports agree a delegate's token sees its own mailbox only, and the
+only documented route to another mailbox is a service account with
+domain-wide delegation. **unverified on a tenant.**
+
+What else the API could say, and does not use: Admin SDK `users.get` with
+`viewType=domain_public` works for a non-admin (scope
+`admin.directory.user.readonly`, contact sharing on) and accepts an alias as
+`userKey`, so it tells primary from alias. The User resource has no field for
+a shared inbox; `isMailboxSetup` is the only mailbox field. `settings.delegates`
+is "only available to service account clients that have been delegated
+domain-wide authority".
 
 ### Sending
 
-| Error | When | Status |
-|-------|------|--------|
-| 403 "Delegation denied for <address>" | `From:` not in the account's send-as list | documented in Gmail API error reference; unverified on a Workspace tenant |
+| Case | What happens | Status |
+|------|--------------|--------|
+| `From:` is the account's primary or an accepted send-as | sent as that address | documented (`sendAsEmail`: "The email address that appears in the From: header") |
+| `From:` is not in the send-as list | community: Gmail rewrites `From:` to the primary and sends, no error | **unverified**, and not documented. This is how Dorset's system mail went out as nikki@ before 19.0.40.2.2 |
+| 403 "Delegation denied for <address>" | community: a `userId` other than the token's own address. The module always calls `users/me`, so `_delegation_denied_reason` should never fire | **not documented** (absent from the error reference); earlier marked documented here, wrong |
+
+The module's guard against the rewrite is upstream: since 19.0.40.2.2 a Gmail
+mailbox sends only with the account whose address it is
+(`resolve_receiving_account`), so `From:` is always that account's primary.
 
 ## IMAP/SMTP
 
@@ -119,5 +143,23 @@ On the Pantalytics tenant, one sign-in with and one without Full Access,
 against: a user mailbox, a shared mailbox, an alias of each, a distribution
 list, a Microsoft 365 group, a deleted address. Each cell's `error.code` and
 `message` into the tables above, and `tests/test_mailbox_access.py`'s
-fixtures updated where a reading above was wrong. On a Workspace account: a
-pending and an accepted send-as alias.
+fixtures updated where a reading above was wrong.
+
+The Workspace tenant is on a domain of its own, not pantalytics.com: that
+domain's MX is Microsoft's, so a Gmail inbox there would never receive mail
+from outside. Business Starter or higher (the native Shared inbox is Business
+editions only), its own OAuth client as an Internal app, three users: two
+people and one shared address. Decided 20 Nov: the Unicorn demo brand (`unicorn-inc.cloudpepper.site`, CRM
+and Sales, Mail Pro still to install), so the tenant is the Google demo as
+well as the test. "Unicorn" is too generic for anyone to own; not Bean Forge,
+which a real coffee roaster trades as (thebeanforge.com). Domain: unicornfactory.nl
+had no DNS on 20 Nov.
+
+On that tenant, through the OAuth Playground with our own client id
+(its redirect URI registered; Google's own client revokes refresh tokens
+after 24h): a pending and an accepted send-as alias; an admin-added user
+alias in `sendAs.list`; `messages.list` with `userId` set to a mailbox the
+signed-in user is a delegate of; `messages.send` with a `From:` outside the
+send-as list, then the `From:` of the copy in Sent; `hd` of a user on a
+secondary domain; and a native Shared inbox (Admin console, Users): can it
+sign in, does it list as a user.
