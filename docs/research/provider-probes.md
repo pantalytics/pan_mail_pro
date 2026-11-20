@@ -149,9 +149,11 @@ The Workspace tenant is on a domain of its own, not pantalytics.com: that
 domain's MX is Microsoft's, so a Gmail inbox there would never receive mail
 from outside. Business Starter or higher (the native Shared inbox is Business
 editions only), its own OAuth client as an Internal app, three users: two
-people and one shared address. Decided 20 Nov: the Bean Forge demo brand
-(`bean-forge.cloudpepper.site` already runs Mail Pro 19.0.40.2.2 with CRM and
-Sales), so the tenant is the Google demo as well as the test.
+people and one shared address. Decided 20 Nov: the Provisional Bureau demo brand
+(`provisional-bureau.cloudpepper.site` runs Mail Pro with CRM and Sales), so
+the tenant is the Google demo as well as the test. Not Bean Forge: a real
+coffee roaster trades as The Bean Forge (thebeanforge.com), and a live mail
+domain under that name in the same trade invites confusion.
 
 On that tenant, through the OAuth Playground with our own client id
 (its redirect URI registered; Google's own client revokes refresh tokens
