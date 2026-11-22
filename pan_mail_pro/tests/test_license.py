@@ -93,7 +93,11 @@ class TestLicense(TransactionCase):
                     'status': 'started', 'user_code': 'ABCD-EFGH',
                     'device_token': 'device-secret', 'verify_url': 'https://mailpro.test/link',
                     'verify_url_complete': 'https://mailpro.test/link?code=ABCD-EFGH',
-                    'expires_at': '2026-09-15T12:15:00+00:00', 'interval_seconds': 5,
+                    # Fifteen minutes out, as the platform answers: a fixed
+                    # date passes, and the pairing reads as expired (#456).
+                    'expires_at': (datetime.now(timezone.utc)
+                                   + timedelta(minutes=15)).isoformat(),
+                    'interval_seconds': 5,
                 })
             if url.endswith('/api/v1/link/poll'):
                 return poll or _response(200, {'status': 'linked', 'key': 'mpk_live_key'})
@@ -158,6 +162,29 @@ class TestLicense(TransactionCase):
             link = self.License.action_connect()
             link.collect_on_return()
         self.assertEqual(link.status, 'pending')
+
+    def test_an_expired_code_is_back_to_connect_and_says_why(self):
+        """#456: the platform drops an unapproved code when it expires and
+        tells nobody, so the page said "Waiting for approval" for days."""
+        with patch(POST, side_effect=self.server()):
+            link = self.License.action_connect()
+        link.pairing_expires_at = fields.Datetime.now() - timedelta(minutes=1)
+        settings = self.env['res.config.settings'].create({})
+        self.assertEqual(settings.x_license_state, 'not_connected')
+        self.assertTrue(settings.x_license_pairing_expired)
+        self.assertIn('expired', self.License.not_allowed_error())
+        with patch(POST, side_effect=self.server()):
+            action = settings.action_license_connect()
+        self.assertEqual(action['url'], 'https://mailpro.test/link?code=ABCD-EFGH')
+        self.assertFalse(link.pairing_expired())
+
+    def test_a_code_still_valid_keeps_waiting(self):
+        with patch(POST, side_effect=self.server()):
+            link = self.License.action_connect()
+        link.pairing_expires_at = fields.Datetime.now() + timedelta(minutes=5)
+        settings = self.env['res.config.settings'].create({})
+        self.assertEqual(settings.x_license_state, 'pending')
+        self.assertFalse(settings.x_license_pairing_expired)
 
     def test_approval_stores_the_key_encrypted_and_reports_in(self):
         link = self.connected()
