@@ -167,6 +167,9 @@ class PanMailSetup(models.AbstractModel):
         row = self.env['pan.mail.mailbox.access'].for_pair(mailbox, account)
         if row and row.can_read == 'yes' and row.can_send == 'yes':
             return 'ok', ''
+        if row and row.can_read == 'no':
+            # Checked, and refused: never "not checked yet".
+            return 'broken', row.error or _('The sign-in cannot read this mailbox.')
         if row and row.can_read == 'yes':
             return 'open', _('Not yet sent from. It turns green after the first email.')
         return 'open', _('Not checked yet. The next sync run checks it.')

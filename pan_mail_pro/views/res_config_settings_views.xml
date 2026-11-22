@@ -17,6 +17,7 @@
                     <field name="x_license_state" invisible="1"/>
                     <field name="x_license_sync_blocked" invisible="1"/>
                     <field name="x_license_mail_paused" invisible="1"/>
+                    <field name="x_license_pairing_expired" invisible="1"/>
                     <field name="x_account_dot" invisible="1"/>
                     <field name="x_provider_dot" invisible="1"/>
                     <field name="x_domains_dot" invisible="1"/>
@@ -103,6 +104,10 @@
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'not_connected'">
                                 Connect this Odoo to your Pantalytics account.
+                            </div>
+                            <div class="o_mailpro_step_msg" invisible="not x_license_pairing_expired">
+                                The last code expired before it was approved. Only an
+                                administrator of your Pantalytics workspace can approve it.
                             </div>
                             <div class="o_mailpro_step_msg" invisible="x_license_state != 'not_connected'">
                                 <button name="action_license_connect" type="object"
