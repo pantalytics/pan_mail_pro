@@ -91,14 +91,7 @@
         <field name="search_view_id" ref="view_pan_mail_error_search"/>
         <field name="context">{'search_default_group_code': 1}</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_empty_folder">Nothing has failed</p>
-            <p>
-                Every failure Mail Pro catches is recorded here for thirty
-                days: a sync run that raised, a mail that could not be sent,
-                a connection that was revoked, a request from the Inbox that
-                failed. Open a row for the traceback. Only the code and a
-                count leave this database, on the daily report to Pantalytics.
-            </p>
+            <p>No errors in the last 30 days</p>
         </field>
     </record>
 

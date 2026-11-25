@@ -134,10 +134,10 @@
                         client on a phone draws compose as an icon.
                     -->
                     <button type="button" class="btn btn-primary btn-sm o_mailpro_new"
-                            aria-label="New email" title="New email"
+                            aria-label="New Email" title="New Email"
                             t-on-click="() => this.newEmail()">
                         <i class="fa fa-pencil-square-o" aria-hidden="true"/>
-                        <span class="o_mailpro_new_label ms-1">New email</span>
+                        <span class="o_mailpro_new_label ms-1">New Email</span>
                     </button>
                 </div>
                 <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
@@ -640,7 +640,7 @@
                                     <!-- tabindex -1: where the keyboard is
                                          put when Send, Discard or Save
                                          draft leaves with the composer. -->
-                                    <h2 class="o_mailpro_conversation_title" tabindex="-1">New email</h2>
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1">New Email</h2>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="this.state.compose and this.state.compose.label"/>
                                     </div>
@@ -648,7 +648,7 @@
                                 <t t-call="pan_mail_pro.ComposerButtons"/>
                             </div>
                         </div>
-                        <div class="o_mailpro_composer" role="region" aria-label="New email"
+                        <div class="o_mailpro_composer" role="region" aria-label="New Email"
                              t-att-aria-busy="this.composer.state.sending ? 'true' : undefined">
                             <ComposerForm t-props="this.composer.formProps"/>
                         </div>
@@ -1506,7 +1506,7 @@
             <button t-if="this.canSaveDraft" type="button" class="btn btn-secondary btn-sm"
                     t-att-class="{ disabled: this.composer.state.saving or this.composer.state.sending }"
                     t-att-aria-disabled="this.composer.state.saving or this.composer.state.sending ? 'true' : undefined"
-                    t-on-click="() => this.composer.saveDraft()">Save draft</button>
+                    t-on-click="() => this.composer.saveDraft()">Save Draft</button>
             <!--
                 While it goes out the button says so. A disabled button
                 alone is a screen that went quiet for the length of a

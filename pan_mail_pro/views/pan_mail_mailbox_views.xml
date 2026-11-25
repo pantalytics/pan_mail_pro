@@ -5,16 +5,13 @@
         <field name="name">pan.mail.mailbox.list</field>
         <field name="model">pan.mail.mailbox</field>
         <field name="arch" type="xml">
-            <list string="Mailboxes" js_class="mailbox_list"
-                  decoration-danger="health_status == 'error'"
-                  decoration-warning="health_status == 'warning'">
+            <list string="Mailboxes" js_class="mailbox_list">
                 <field name="sequence" widget="handle"/>
                 <field name="email" string="Mailbox"/>
                 <!-- What the mailbox is at the provider. Mail Pro's own
                      sending policy (`mailbox_type`) is not shown. -->
                 <field name="provider_type" string="Type" optional="show"/>
                 <!-- The same one word as the mailbox page's header. -->
-                <field name="health_status" column_invisible="1"/>
                 <field name="sync_status" string="Status" widget="badge"
                        decoration-success="sync_status == 'syncing'"
                        decoration-danger="sync_status in ('failing', 'stopped')"
@@ -214,12 +211,8 @@
         <field name="res_model">pan.mail.mailbox</field>
         <field name="view_mode">list,form</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">
-                Add your first mailbox
-            </p>
-            <p>
-                A mailbox is an email address Mail Pro sends and receives on.
-            </p>
+            <p>No mailboxes yet</p>
+            <p>Add one with New.</p>
         </field>
     </record>
 
