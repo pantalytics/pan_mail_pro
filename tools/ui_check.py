@@ -155,6 +155,14 @@ class Checks:
         page.wait_for_timeout(800)
         self.shot('settings-mail-pro.png')
 
+        # The checklist sits under no grey block title: the tab already
+        # names the app (pantalytics-odoo-ui, Settings).
+        titles = page.eval_on_selector_all(
+            '.app_settings_block[data-key=pan_mail_pro] h2',
+            'els => els.map(e => e.textContent.trim())')
+        if 'Setup' in titles:
+            self.fail('the Mail Pro settings still show a "Setup" block title')
+
         steps = page.query_selector_all('.o_mailpro_step')
         if len(steps) != 5:
             self.fail(f'the checklist has {len(steps)} steps, expected 5')
