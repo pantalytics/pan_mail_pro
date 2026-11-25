@@ -225,7 +225,7 @@ class TestGoogleProvider(TransactionCase):
         self.assertFalse(client.resolve_sending_account(mailbox))
         self.assertFalse(mailbox._has_working_credentials())
         self.assertTrue(mailbox.signs_in_as_itself)
-        self.assertIn('Sign in as this address', mailbox._no_credentials_error())
+        self.assertIn('Sign in to Gmail as accounts@test.local', mailbox._no_credentials_error())
 
         service = self.Account.create({
             'email': 'Accounts@test.local', 'provider': 'gmail', 'user_id': False,
