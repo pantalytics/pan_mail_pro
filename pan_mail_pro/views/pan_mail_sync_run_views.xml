@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Runs (the Mail Pro canvas, 08): Odoo's list, newest first. -->
+    <record id="view_pan_mail_sync_run_list" model="ir.ui.view">
+        <field name="name">pan.mail.sync.run.list</field>
+        <field name="model">pan.mail.sync.run</field>
+        <field name="arch" type="xml">
+            <list string="Runs" create="false" edit="false"
+                  decoration-danger="state == 'failed'">
+                <field name="started"/>
+                <field name="kind"/>
+                <field name="mailbox_id" optional="hide" context="{'pan_mail_sync_page': False}"/>
+                <field name="started_by" optional="show"/>
+                <field name="took" optional="show"/>
+                <field name="read_count"/>
+                <field name="linked_count"/>
+                <field name="skipped_count"/>
+                <field name="error_count" decoration-danger="error_count &gt; 0"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'done'"
+                       decoration-danger="state == 'failed'"
+                       decoration-muted="state == 'running'"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- A run (the Mail Pro canvas, 09): Odoo's form, what it read and where
+         each mail went, the routing log rows that carry its run. -->
+    <record id="view_pan_mail_sync_run_form" model="ir.ui.view">
+        <field name="name">pan.mail.sync.run.form</field>
+        <field name="model">pan.mail.sync.run</field>
+        <field name="arch" type="xml">
+            <form string="Run" create="false" edit="false">
+                <header>
+                    <field name="state" widget="statusbar" statusbar_visible="running,done"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="display_name" readonly="1"/></h1>
+                    </div>
+                    <div class="text-danger mb-3" invisible="not message">
+                        <field name="message" readonly="1" nolabel="1"/>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="mailbox_id" readonly="1" context="{'pan_mail_sync_page': False}"/>
+                            <field name="started_by" readonly="1"/>
+                            <field name="took" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="read_count" readonly="1"/>
+                            <field name="linked_count" readonly="1"/>
+                            <field name="skipped_count" readonly="1"/>
+                            <field name="error_count" readonly="1"/>
+                        </group>
+                    </group>
+                    <field name="log_ids" readonly="1" invisible="not log_ids">
+                        <list>
+                            <field name="subject"/>
+                            <field name="email_from" string="From"/>
+                            <field name="target_name" string="Linked To"/>
+                            <field name="outcome" widget="badge"
+                                   decoration-success="outcome == 'threaded'"
+                                   decoration-warning="outcome == 'fallback'"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_pan_mail_sync_run_search" model="ir.ui.view">
+        <field name="name">pan.mail.sync.run.search</field>
+        <field name="model">pan.mail.sync.run</field>
+        <field name="arch" type="xml">
+            <search string="Runs">
+                <field name="mailbox_id"/>
+                <filter name="filter_read" string="Read Something" domain="[('read_count', '&gt;', 0)]"/>
+                <filter name="filter_failed" string="Failed" domain="[('state', '=', 'failed')]"/>
+                <separator/>
+                <filter name="filter_incoming" string="Read Mail" domain="[('kind', '=', 'incoming')]"/>
+                <filter name="filter_access" string="Access Check" domain="[('kind', '=', 'access_check')]"/>
+                <group>
+                    <filter name="group_mailbox" string="Mailbox" context="{'group_by': 'mailbox_id'}"/>
+                    <filter name="group_kind" string="Run" context="{'group_by': 'kind'}"/>
+                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_pan_mail_sync_run" model="ir.actions.act_window">
+        <field name="name">Runs</field>
+        <field name="res_model">pan.mail.sync.run</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p>No runs yet</p>
+            <p>The sync writes one every time it reads a mailbox.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_pan_mail_sync_run"
+              name="Runs"
+              parent="pan_mail_pro.menu_pan_mail_root"
+              action="action_pan_mail_sync_run"
+              sequence="45"
+              groups="pan_mail_pro.group_mail_mailbox_manager"/>
+</odoo>

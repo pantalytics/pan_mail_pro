@@ -88,11 +88,15 @@ class TestSyncLevelSlider(MailProTestCase):
         arch = self.env[view.model].get_view(view.id)['arch']
         return etree.fromstring(arch).xpath(f'//field[@name="{name}"]')
 
-    def test_the_mailbox_form_draws_the_slider(self):
+    def test_the_sync_page_picks_the_level_from_a_plain_selection(self):
+        """The mailbox's Sync page (canvas 06) is a row with Odoo's own
+        selection; the slider stays on My Preferences."""
         fields = self._field(
-            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_form'), 'sync_level')
+            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_sync_form'), 'sync_level')
         self.assertTrue(fields)
-        self.assertEqual({f.get('widget') for f in fields}, {'mailpro_sync_level'})
+        self.assertEqual({f.get('widget') for f in fields}, {None})
+        self.assertFalse(self._field(
+            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_form'), 'sync_level'))
 
     def test_my_preferences_draws_the_same_slider(self):
         for xmlid in ('base.view_users_form_simple_modif', 'base.view_users_form'):

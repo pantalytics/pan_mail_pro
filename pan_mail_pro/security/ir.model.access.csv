@@ -15,3 +15,4 @@ access_pan_mail_license_system,pan.mail.license.system,model_pan_mail_license,ba
 access_pan_mail_draft_user,pan.mail.draft.user,model_pan_mail_draft,base.group_user,1,1,1,1
 access_pan_mail_mailbox_access_user,pan.mail.mailbox.access.user,model_pan_mail_mailbox_access,base.group_user,1,0,0,0
 access_pan_mail_mailbox_access_manager,pan.mail.mailbox.access.manager,model_pan_mail_mailbox_access,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
+access_pan_mail_sync_run_manager,pan.mail.sync.run.manager,model_pan_mail_sync_run,pan_mail_pro.group_mail_mailbox_manager,1,1,1,1
