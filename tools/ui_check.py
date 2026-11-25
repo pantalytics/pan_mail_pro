@@ -4685,7 +4685,7 @@ class Checks:
 
             # The Sync page: the same record, settings, the switch and runs.
             self.page.click('.o_form_view button[name="action_open_sync"]')
-            self.page.wait_for_selector('.o_form_view .o_mailpro_mailbox_sync', timeout=30000)
+            self.page.wait_for_selector('.o_form_view.o_mailpro_mailbox_sync', timeout=30000)
             self.page.wait_for_timeout(1000)
             self.shot('mailbox-sync-page.png')
             sync_text = self.page.inner_text('.o_form_view')

@@ -9,7 +9,7 @@
                   decoration-danger="state == 'failed'">
                 <field name="started"/>
                 <field name="kind"/>
-                <field name="mailbox_id" optional="hide"/>
+                <field name="mailbox_id" optional="hide" context="{'pan_mail_sync_page': False}"/>
                 <field name="started_by" optional="show"/>
                 <field name="took" optional="show"/>
                 <field name="read_count"/>
@@ -43,7 +43,7 @@
                     </div>
                     <group>
                         <group>
-                            <field name="mailbox_id" readonly="1"/>
+                            <field name="mailbox_id" readonly="1" context="{'pan_mail_sync_page': False}"/>
                             <field name="started_by" readonly="1"/>
                             <field name="took" readonly="1"/>
                         </group>

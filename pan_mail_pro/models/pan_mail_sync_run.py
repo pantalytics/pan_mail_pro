@@ -46,8 +46,8 @@ class PanMailSyncRun(models.Model):
     started = fields.Datetime(string='Started', required=True,
                               default=fields.Datetime.now, index=True)
     took = fields.Float(string='Took (s)', digits=(10, 1))
-    started_by = fields.Many2one('res.users', string='Started By',
-                                 help='Empty when the sync started it on its own.')
+    # Empty when the sync started it on its own.
+    started_by = fields.Many2one('res.users', string='Started By')
     read_count = fields.Integer(string='Read')
     linked_count = fields.Integer(string='Linked')
     skipped_count = fields.Integer(string='Left Out')

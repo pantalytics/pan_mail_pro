@@ -134,7 +134,7 @@ class TestSyncRun(TransactionCase):
         """The settings a person changes are tracked in the chatter."""
         tracked = self.mailbox._track_get_fields()
         for name in ('sync_level', 'route_to_team', 'alias_id', 'is_notification_mailbox',
-                     'owner_user_id', 'sync_start_date', 'state', 'sync_enabled'):
+                     'owner_user_id', 'sync_start_date', 'sync_enabled'):
             self.assertIn(name, tracked, name)
 
     def test_the_sync_page_is_the_same_record_and_reads_sync(self):

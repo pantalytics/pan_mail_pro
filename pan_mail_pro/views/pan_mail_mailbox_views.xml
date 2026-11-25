@@ -91,15 +91,15 @@
                              owns it, so the owner is read, not picked. -->
                         <label for="owner_user_id" string="Owner"/>
                         <div class="o_mailpro_row_owner d-flex align-items-center gap-2">
-                            <field name="owner_user_id" nolabel="1"
+                            <field class="w-auto" name="owner_user_id" nolabel="1"
                                    readonly="owner_is_address and id"
                                    required="is_notification_mailbox"/>
                             <field name="sign_in_problem" readonly="1" nolabel="1"
-                                   class="text-danger small o_mailpro_row_problem"
+                                   class="w-auto text-danger small o_mailpro_row_problem"
                                    invisible="not sign_in_problem"/>
                             <field name="can_sign_in" invisible="1"/>
                             <button name="action_sign_in" type="object"
-                                    string="Sign In" class="btn-secondary btn-sm"
+                                    string="Sign In" class="btn-secondary btn-sm text-nowrap"
                                     invisible="not can_sign_in"/>
                             <!-- The only way from an IMAP mailbox to its password. -->
                             <button name="action_open_account" type="object"
@@ -111,9 +111,9 @@
                              Sync page (Run Now). -->
                         <label for="sync_value" string="Sync" invisible="not id"/>
                         <div class="o_mailpro_row_sync d-flex align-items-center gap-2" invisible="not id">
-                            <field name="sync_value" readonly="1" nolabel="1" class="text-muted"/>
+                            <field name="sync_value" readonly="1" nolabel="1" class="w-auto text-muted"/>
                             <field name="sync_problem" readonly="1" nolabel="1"
-                                   class="text-danger small o_mailpro_row_problem"
+                                   class="w-auto text-danger small o_mailpro_row_problem"
                                    invisible="not sync_problem"/>
                             <button name="action_open_sync" type="object" string="Open"
                                     class="btn-link btn-sm"/>
@@ -123,7 +123,7 @@
                             <field name="issue_count" invisible="1"/>
                             <field name="issue_text" readonly="1" nolabel="1"
                                    decoration-danger="issue_count &gt; 0"
-                                   class="small"/>
+                                   class="w-auto small"/>
                             <button name="action_open_issues" type="object" string="Open"
                                     class="btn-link btn-sm" invisible="not issue_count"/>
                         </div>
@@ -150,18 +150,17 @@
         <field name="arch" type="xml">
             <form string="Sync" class="o_mailpro_mailbox_sync" create="false" delete="false">
                 <sheet>
-                    <field name="routing_log_count" invisible="1"/>
-                    <group string="Settings" class="o_mailpro_sync_settings">
+                                        <group string="Settings" class="o_mailpro_sync_settings">
                         <field name="sync_level" string="Sync Level"/>
                         <!-- Routing is always a row. Replies follow their
                              conversation whatever is set here; from Known
                              Contacts on, a new conversation goes to the team
                              picked, or to the sender's contact. -->
                         <label for="alias_id" string="Routing"/>
-                        <div>
+                        <div class="d-flex align-items-center gap-2">
                             <span class="text-muted"
                                   invisible="sync_level in ('contacts', 'everyone')">Replies follow their conversation</span>
-                            <field name="alias_id" nolabel="1"
+                            <field class="w-auto" name="alias_id" nolabel="1"
                                    invisible="sync_level not in ('contacts', 'everyone')"
                                    options="{'no_create': True, 'no_create_edit': True}"
                                    placeholder="Sender's Contact"/>
@@ -174,10 +173,10 @@
                     </div>
                     <group string="Sync">
                         <label for="sync_enabled" string="Sync"/>
-                        <div>
-                            <field name="sync_enabled" widget="boolean_toggle" nolabel="1"
-                                   class="d-inline-block"/>
-                            <field name="sync_status" widget="badge" nolabel="1" class="ms-2"
+                        <div class="d-flex align-items-center gap-2">
+                            <field class="w-auto" name="sync_enabled" widget="boolean_toggle" nolabel="1"
+                                  />
+                            <field class="w-auto" name="sync_status" widget="badge" nolabel="1" 
                                    decoration-success="sync_status == 'syncing'"
                                    decoration-danger="sync_status in ('failing', 'stopped')"
                                    decoration-muted="sync_status in ('not_checked', 'off')"/>
@@ -185,20 +184,20 @@
                     </group>
                     <group string="Runs">
                         <label for="last_run_text" string="Last Run"/>
-                        <div>
-                            <field name="last_run_text" readonly="1" nolabel="1" class="d-inline-block"/>
+                        <div class="d-flex align-items-center gap-2">
+                            <field class="w-auto" name="last_run_text" readonly="1" nolabel="1"/>
                             <button name="action_open_runs" type="object" string="Open"
                                     class="btn-link btn-sm"/>
                         </div>
                         <label for="next_run" string="Next Run"/>
-                        <div>
-                            <field name="next_run" readonly="1" nolabel="1" class="d-inline-block"/>
+                        <div class="d-flex align-items-center gap-2">
+                            <field class="w-auto" name="next_run" readonly="1" nolabel="1"/>
                             <button name="action_sync_now" type="object" string="Run Now"
-                                    class="btn-secondary btn-sm ms-2"/>
+                                    class="btn-secondary btn-sm text-nowrap"/>
                         </div>
                         <label for="routing_log_count" string="Mail Log"/>
-                        <div>
-                            <span class="d-inline-block"><field name="routing_log_count" readonly="1" nolabel="1"/> routed here</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <field class="w-auto" name="routing_log_count" readonly="1" nolabel="1"/>
                             <button name="action_open_routing_log" type="object" string="Open"
                                     class="btn-link btn-sm"/>
                         </div>

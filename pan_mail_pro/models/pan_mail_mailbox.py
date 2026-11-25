@@ -537,7 +537,7 @@ class PanMailMailbox(models.Model):
         ('draft', 'Not Configured'),
         ('active', 'Active'),
         ('error', 'Error'),
-    ], string='Sync Status', default='draft', readonly=True, tracking=True)
+    ], string='Sync Status', default='draft', readonly=True)
     # The switch on the Sync page. Off is a person's; a sync that failed
     # SYNC_FAILURE_LIMIT runs in a row turns it off itself (Stopped), and
     # Run Now or turning it on again resumes it.
@@ -883,19 +883,19 @@ class PanMailMailbox(models.Model):
         ('failing', 'Failing'),
         ('stopped', 'Stopped'),
         ('off', 'Off'),
-    ], string='Status', compute='_compute_sync_status')
+    ], string='Mailbox Status', compute='_compute_sync_status')
     sign_in_name = fields.Char(string='Sign-In', compute='_compute_sign_in')
     sign_in_problem = fields.Char(compute='_compute_sign_in')
     # Whether the Sign-In row offers Sign In: this mailbox lacks a working
     # sign-in, and Mail Pro knows whose to start for the person looking.
     can_sign_in = fields.Boolean(compute='_compute_sign_in')
     issue_count = fields.Integer(string='Issues', compute='_compute_issue_count')
-    issue_text = fields.Char(string='Issues', compute='_compute_issue_count')
+    issue_text = fields.Char(string='Issue Summary', compute='_compute_issue_count')
     run_ids = fields.One2many('pan.mail.sync.run', 'mailbox_id', string='Runs')
     last_run_text = fields.Char(string='Last Run', compute='_compute_runs_rows')
     # The Sync row of the mailbox page: its value (the last run, or Off), and
     # a red word next to it when the sync fails or stopped.
-    sync_value = fields.Char(string='Sync', compute='_compute_runs_rows')
+    sync_value = fields.Char(string='Sync Summary', compute='_compute_runs_rows')
     sync_problem = fields.Char(compute='_compute_runs_rows')
     next_run = fields.Datetime(string='Next Run', compute='_compute_runs_rows')
 
@@ -1030,7 +1030,7 @@ class PanMailMailbox(models.Model):
         action = self.env['ir.actions.act_window']._for_xml_id(
             'pan_mail_pro.action_pan_mail_sync_run')
         action['domain'] = [('mailbox_id', '=', self.id)]
-        action['context'] = {}
+        action['context'] = {'pan_mail_sync_page': False}
         return action
 
     def action_open_issues(self):
