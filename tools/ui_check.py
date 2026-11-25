@@ -811,7 +811,7 @@ class Checks:
         """A database with no mailbox yet opens the Inbox on the way back to
         the setup checklist, one line and one button, not on chatter mail: on
         a fresh Odoo.sh database it opened on OdooBot's "Welcome to Odoo!"
-        (3 Nov). The button is Finish setup, to Settings, Mail Pro: a mailbox
+        (3 Nov). The button is Finish Setup, to Settings, Mail Pro: a mailbox
         needs the provider before it (6 Nov)."""
         action = dict(module_menu_actions(self.call)).get('Inbox')
         page = self.page
@@ -829,17 +829,17 @@ class Checks:
             if page.query_selector('.o_mailpro_item, .o_mailpro_folder'):
                 self.fail('with no mailbox the Inbox still draws conversations or folders')
             buttons = [b.inner_text().strip() for b in
-                       page.query_selector_all('.o_mailpro_gate_no_mailbox button')
+                       page.query_selector_all('.o_mailpro_gate_screen_no_mailbox button')
                        if b.is_visible()]
-            if buttons != ['Finish setup']:
-                self.fail(f'the no-mailbox Inbox offers {buttons}, expected "Finish setup"')
+            if buttons != ['Finish Setup']:
+                self.fail(f'the no-mailbox Inbox offers {buttons}, expected "Finish Setup"')
                 return
-            page.click('.o_mailpro_gate_no_mailbox button')
+            page.click('.o_mailpro_gate_screen_no_mailbox button')
             try:
                 page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
                                        timeout=60000)
             except Exception:
-                self.fail(f'"Finish setup" did not open the Mail Pro settings; '
+                self.fail(f'"Finish Setup" did not open the Mail Pro settings; '
                           f'it is on {page.url}')
                 return
             self.error_free('the no-mailbox Inbox')
@@ -947,7 +947,20 @@ class Checks:
             self.shot('inbox-not-connected.png')
             if page.query_selector('.o_mailpro_folder'):
                 self.fail('an unlinked database still draws the mailbox list')
-            connect = [b for b in page.query_selector_all('.o_mailpro_gate button')
+            # Inside Odoo's shell (canvas 13): the navbar stays, the one
+            # button is in the bar, one line says why, and there is no logo
+            # and no "Back to Odoo" out of a screen that never left.
+            if not self.visible('nav.o_main_navbar'):
+                self.fail("the Inbox gate hides Odoo's navbar")
+            if not page.query_selector('.o_mailpro_gate_screen .o_mailpro_topbar .btn-primary'):
+                self.fail('the Inbox gate has no primary button in its bar')
+            title = page.query_selector('.o_mailpro_gate_title')
+            if not title or title.inner_text().strip() != 'Not connected to Pantalytics':
+                self.fail('the Inbox gate does not say "Not connected to Pantalytics"')
+            if page.query_selector('.o_mailpro_gate img') or \
+                    page.query_selector('.o_mailpro_gate_screen a:has-text("Back to Odoo")'):
+                self.fail('the Inbox gate still draws a logo or a "Back to Odoo"')
+            connect = [b for b in page.query_selector_all('.o_mailpro_gate_screen button')
                        if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
             if len(connect) != 1:
                 self.fail(f'the Inbox gate shows {len(connect)} Connect buttons, expected 1')
@@ -994,8 +1007,8 @@ class Checks:
             # fix, so the same button opens Settings, which says what is.
             self.call('pan.mail.license', 'write', [link[0]['id']], {'status': 'canceled'})
             page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
-            page.wait_for_selector('.o_mailpro_gate button', timeout=30000)
-            page.click('.o_mailpro_gate button')
+            page.wait_for_selector('.o_mailpro_gate_screen button', timeout=30000)
+            page.click('.o_mailpro_gate_screen button')
             try:
                 page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
                                        timeout=60000)
@@ -1056,7 +1069,7 @@ class Checks:
                 return
             page.wait_for_timeout(800)
             self.shot('inbox-copy-not-connected.png')
-            connect = [b for b in page.query_selector_all('.o_mailpro_gate button')
+            connect = [b for b in page.query_selector_all('.o_mailpro_gate_screen button')
                        if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
             if len(connect) != 1:
                 self.fail(f'the Inbox gate on a copy shows {len(connect)} Connect buttons, expected 1')
@@ -1425,29 +1438,21 @@ class Checks:
         if page.query_selector('.o_mailpro_conversation_list_head .o_mailpro_filter_toggle'):
             self.fail('the conversation list still carries its own filter button')
 
-        # One bar, not two. The action is fullscreen, so `web.WebClient` draws
-        # no navbar over this screen and the row it used to take belongs to the
-        # mail. The Inbox's own bar carries what the navbar carried: the way
-        # back to Odoo on the left, the systray on the right. A regression here
-        # is either a second bar coming back, or -- worse -- a fullscreen
-        # screen with no door out of it.
-        strays = page.evaluate(
-            "document.querySelectorAll("
-            "'.o_main_navbar:not(.o_mailpro_topbar_end)').length")
-        if strays:
-            self.fail("Odoo's navbar is drawn over the Inbox: two bars over the mail")
-        home = page.query_selector('.o_mailpro_topbar .o_mailpro_home')
-        if not home or not home.is_visible():
-            self.fail('the fullscreen Inbox has no way back to Odoo')
-        elif home.get_attribute('href') != '/odoo':
-            self.fail('the way back out of the Inbox does not go to Odoo')
-        if not page.query_selector('.o_mailpro_topbar_end .o_menu_systray > *'):
-            self.fail('the systray went with the navbar and nothing brought it back')
-        else:
-            box = page.query_selector('.o_mailpro_topbar_end').bounding_box()
-            bar = page.query_selector('.o_mailpro_topbar').bounding_box()
-            if box['height'] > bar['height']:
-                self.fail('the systray is taller than the bar holding it')
+        # Inside Odoo's shell (canvas 10): Odoo's navbar is drawn over the
+        # Inbox and carries the systray and the way back, so the Inbox's own
+        # bar carries neither. Its bar says where you are ("Inbox"), and New
+        # Email is the one primary button on the screen.
+        if not self.visible('nav.o_main_navbar'):
+            self.fail("Odoo's navbar is not drawn over the Inbox: it went fullscreen again")
+        if page.query_selector('.o_mailpro_topbar .o_mailpro_home, .o_mailpro_topbar .o_menu_systray'):
+            self.fail('the Inbox bar still draws its own way home or systray')
+        crumb = page.query_selector('.o_mailpro_topbar .o_mailpro_crumb')
+        if not crumb or crumb.inner_text().strip() != 'Inbox':
+            self.fail('the Inbox bar does not say where you are')
+        primaries = [b for b in page.query_selector_all('.o_mailpro_inbox .btn-primary') if b.is_visible()]
+        if len(primaries) != 1 or 'o_mailpro_new' not in (primaries[0].get_attribute('class') or ''):
+            self.fail('the Inbox shows %d primary buttons, expected only New Email: %r'
+                      % (len(primaries), [b.inner_text().strip()[:20] for b in primaries]))
 
         # The filter menu opens once, over the list, not once per mailbox.
         page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
@@ -1872,9 +1877,12 @@ class Checks:
         if page.query_selector('.o_mailpro_conversation_head button:has-text("Log note")'):
             self.fail('the Mail tab offers Log note')
 
-        # The screen's one primary action. A reader-only inbox is half a
-        # product, and this is the click that proves it is not one.
-        reply = page.query_selector('.o_mailpro_conversation_head button.btn-primary')
+        # Reply: a reader-only inbox is half a product, and this is the click
+        # that proves it is not one. On a desktop it is secondary: New Email
+        # is the screen's one primary (canvas 10).
+        reply = page.query_selector('.o_mailpro_conversation_head button.o_mailpro_primary_action:has-text("Reply")')
+        if reply and 'btn-primary' in (reply.get_attribute('class') or ''):
+            self.fail('Reply is a second primary button beside New Email')
         if not reply:
             self.fail('the conversation has no Reply button')
         else:
@@ -1892,6 +1900,17 @@ class Checks:
                 page.wait_for_timeout(600)
                 if page.query_selector('.modal .o_form_view'):
                     self.fail('Reply opened the composer in a dialog')
+                # While writing, Send is the one primary and comes first;
+                # New Email steps back (canvas 11).
+                new = page.query_selector('.o_mailpro_new')
+                if new and 'btn-primary' in (new.get_attribute('class') or ''):
+                    self.fail('New Email stays primary while a reply is open')
+                order = page.evaluate(
+                    "[...document.querySelectorAll('.o_mailpro_conversation_head button')]"
+                    ".filter(b => b.offsetParent).map(b => b.innerText.trim())"
+                    ".filter(t => ['Send', 'Save Draft', 'Discard', 'Close'].includes(t))")
+                if order[:1] != ['Send']:
+                    self.fail(f'the composer buttons read {order}, Send not first')
                 # The chatter fills "To" from the record; the composer on its
                 # own fills nothing, and a reply to nobody is the one bug a
                 # green suite cannot see. The seeded conversation has a customer,
@@ -3023,9 +3042,8 @@ class Checks:
                 self.fail('the search box is %dpx wide on a 390px phone' % box['width'])
             if box['height'] > bar['height'] or box['y'] + box['height'] > bar['y'] + bar['height']:
                 self.fail('the search bar does not fit the bar it is in on a phone')
-        home = page.query_selector('.o_mailpro_home')
-        if not home or not home.is_visible():
-            self.fail('a phone has no way back to Odoo from the Inbox')
+        if not self.visible('nav.o_main_navbar'):
+            self.fail("a phone has no Odoo navbar over the Inbox, so no way back")
         button = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
         if not button or not button.is_visible():
             self.fail('a phone has no button for the mailbox list')
@@ -3098,9 +3116,17 @@ class Checks:
         if reading and reading.bounding_box()['y'] > 844 * 0.25:
             self.fail('the mail starts %dpx down a 844px phone'
                       % reading.bounding_box()['y'])
-        floating = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
-        if floating and floating.bounding_box()['y'] < 844 * 0.75:
-            self.fail('Reply is not at the bottom of the phone, where a thumb is')
+        # Reply is the primary button at the top of the conversation, where
+        # Odoo puts a phone's first header button (canvas 12), not a pill
+        # floating over the bottom of the mail.
+        reply = page.query_selector('.o_mailpro_conversation_head button.btn-primary:has-text("Reply")')
+        if not reply or not reply.is_visible():
+            self.fail('a phone has no primary Reply in the conversation head')
+        elif reply.bounding_box()['y'] > 844 * 0.4:
+            self.fail('Reply is %dpx down the phone, not at the top' % reply.bounding_box()['y'])
+        if page.evaluate("[...document.querySelectorAll('.o_mailpro_conversation button')]"
+                         ".some(b => b.offsetParent && getComputedStyle(b.closest('.o_mailpro_actions') || b).position === 'absolute')"):
+            self.fail('a button still floats over the mail on a phone')
         # A finger, not a pointer: every button in that bar and the two at
         # the top are at least the 44px a phone mail app draws them at. The
         # first version had 24px icons beside a 36px Reply.
