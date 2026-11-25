@@ -167,8 +167,8 @@ class Checks:
         if len(steps) != 5:
             self.fail(f'the checklist has {len(steps)} steps, expected 5')
         names = [s.query_selector('.o_mailpro_step_name').inner_text().strip() for s in steps]
-        if names != ['1. Pantalytics account', '2. Email provider',
-                     '3. Internal domains', '4. Mailboxes', '5. Notification mailbox']:
+        if names != ['Pantalytics Account', 'Email Provider',
+                     'Internal Domains', 'Mailboxes', 'Notification Mailbox']:
             self.fail(f'the steps read {names}')
 
         for index, step in enumerate(steps, start=1):
@@ -190,11 +190,9 @@ class Checks:
             if any(line.strip() == code for line in text.splitlines()):
                 self.fail(f'the page shows the selection code "{code}" instead of its label')
 
-        version = manifest_version()
-        if version not in text:
-            self.fail(f'About does not show the version {version}')
-        if 'Pantalytics B.V.' not in text:
-            self.fail('About does not carry the copyright line')
+        # No About block: the version is on Apps, the licence in the module.
+        if 'Pantalytics B.V.' in text or 'Elastic License' in text:
+            self.fail('the Mail Pro settings still carry the About block')
 
         # Step 1, connected: one word, and nothing of the not-connected or
         # pending states leaking onto the screen. The seed's answer names no
@@ -202,7 +200,7 @@ class Checks:
         # `settings_workspace_name`'s. Who connected, usage and
         # billing and the way out moved to the account page behind the arrow.
         head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
-        if head != '1. Pantalytics account Connected':
+        if head != 'Pantalytics Account Connected':
             self.fail(f'step 1 reads "{head}", not "Connected"')
         if 'Connected by' in steps[0].inner_text():
             self.fail('step 1 still says who connected; that is the account page')
@@ -217,7 +215,7 @@ class Checks:
         # line. The move itself is on the provider form behind the arrow.
         # Pantalytics is not an email provider, so its app is never named.
         head = ' '.join(steps[1].query_selector('.o_mailpro_step_head').inner_text().split())
-        if head != '2. Email provider Microsoft 365':
+        if head != 'Email Provider Microsoft 365':
             self.fail(f'step 2 on an own app reads "{head}", not "Microsoft 365"')
         # Amber, not red: the old sign-ins keep working, nothing is broken.
         if not steps[1].query_selector('.o_mailpro_dot_attention:visible'):
@@ -285,7 +283,7 @@ class Checks:
             step = step_1('Acme')
             self.shot('settings-workspace-name.png')
             head = ' '.join(step.query_selector('.o_mailpro_step_head').inner_text().split())
-            if head != '1. Pantalytics account Acme':
+            if head != 'Pantalytics Account Acme':
                 self.fail(f'step 1 with a workspace name reads "{head}"')
 
             step = step_1(long_name)
@@ -311,11 +309,11 @@ class Checks:
     def up_and_running(self):
         """Five steps done (#415): the checklist folds into "Mail Pro is
         up and running", confetti flies once per database and never on a
-        reload, Show setup unfolds the five green steps, and the one next action opens the colleagues who have not
-        connected a mailbox, with Take the tour beside it, which opens the
-        Inbox on its tour. The seed is mid-setup on purpose (an own Azure
-        app, two stopped mailboxes, a personal notification mailbox), so the
-        walk stands the green in for itself and puts the seed back after.
+        reload, Show Setup unfolds the five green steps, and the one next
+        action opens the colleagues who have not connected a mailbox. No
+        illustration and no second button: the Inbox has its own tour. The
+        seed is mid-setup on purpose (an own Azure app, two stopped
+        mailboxes, a personal notification mailbox), so the walk stands the green in for itself and puts the seed back after.
         No mail has to have arrived: the checklist is configuration only.
         """
         page = self.page
@@ -353,10 +351,6 @@ class Checks:
             except Exception:
                 return False
 
-        def launched():
-            return 'o_mailpro_launch' in (
-                page.get_attribute('.o_mailpro_rocket', 'class') or '')
-
         try:
             call('pan.mail.provider', 'unlink', [r['id'] for r in rows])
             call('pan.mail.provider', 'create', {
@@ -385,7 +379,7 @@ class Checks:
                     'email': 'colleague@example.com'}, context={'no_reset_password': True})
             call('ir.config_parameter', 'set_param', param, False)
 
-            # The first time: the line, the rocket going up, confetti.
+            # The first time: the line and confetti.
             first = open_settings()
             confetti = flew()
             page.wait_for_timeout(350)
@@ -396,8 +390,8 @@ class Checks:
                 self.fail(f'the first page that says up and running was not the first ({first})')
             if not confetti:
                 self.fail('no confetti the first time Mail Pro is up and running')
-            if not launched():
-                self.fail('the rocket did not go up the first time')
+            if page.query_selector('.o_mailpro_running svg'):
+                self.fail('the up-and-running line still carries an illustration')
             if page.query_selector('.o_mailpro_confetti'):
                 self.fail('the confetti layer stays on the page after it landed')
             block = page.query_selector('div.app_settings_block[data-key=pan_mail_pro]')
@@ -411,23 +405,23 @@ class Checks:
                 self.fail(f'{len(shown)} setup steps are still on screen once it is up and running')
             primary = [b.inner_text().strip() for b in block.query_selector_all('.btn-primary')
                        if b.is_visible()]
-            if primary != ['Invite your colleagues to connect their mailbox']:
+            if primary != ['Invite Colleagues']:
                 self.fail(f'the one next action reads {primary}')
             if page.query_selector('.o_mailpro_running_msg'):
                 self.fail('a shared notification mailbox still shows the personal-mailbox line')
             secondary = [b.inner_text().strip()
                          for b in block.query_selector_all('.o_mailpro_running .btn-secondary')
                          if b.is_visible()]
-            if secondary != ['Take the tour']:
-                self.fail(f'beside the invite: {secondary}, expected "Take the tour"')
+            if secondary:
+                self.fail(f'beside the invite: {secondary}, expected nothing')
 
             # A reload is not a second time, and Show setup is a click away.
             again = open_settings()
-            if again is not False or flew() or launched():
+            if again is not False or flew():
                 self.fail('the confetti flew again on a reload')
             toggle = page.query_selector('button.o_mailpro_show_setup')
-            if not toggle or toggle.inner_text().strip() != 'Show setup':
-                self.fail('the folded checklist offers no "Show setup"')
+            if not toggle or toggle.inner_text().strip() != 'Show Setup':
+                self.fail('the folded checklist offers no "Show Setup"')
             else:
                 toggle.click()
                 page.wait_for_timeout(500)
@@ -440,7 +434,7 @@ class Checks:
                             if d.is_visible()]
                     if len(dots) != 1 or 'o_mailpro_dot_ok' not in dots[0]:
                         self.fail(f'step {index} under Show setup shows {dots}, not green')
-                if toggle.inner_text().strip() != 'Hide setup':
+                if toggle.inner_text().strip() != 'Hide Setup':
                     self.fail(f'the open checklist\'s button reads "{toggle.inner_text().strip()}"')
                 self.rows_only_report(steps, 'up and running, unfolded')
 
@@ -454,7 +448,7 @@ class Checks:
             line = page.query_selector('.o_mailpro_running_msg')
             if not line or not line.is_visible():
                 self.fail('up and running with a personal notification mailbox shows no line for it')
-            elif ' '.join(line.inner_text().split()) != 'System email from a personal mailbox':
+            elif ' '.join(line.inner_text().split()) != 'Personal mailbox':
                 self.fail(f'the personal-mailbox line reads "{line.inner_text().strip()}"')
             else:
                 line.click()
@@ -472,8 +466,8 @@ class Checks:
             still = open_settings()
             if still is not True:
                 self.fail('the first time under reduced motion was not the first')
-            if flew() or launched():
-                self.fail('confetti or the rocket moved under prefers-reduced-motion')
+            if flew():
+                self.fail('confetti flew under prefers-reduced-motion')
             page.emulate_media(reduced_motion='no-preference')
 
             # The next action: the colleagues with no mailbox, on Odoo's own
@@ -488,33 +482,11 @@ class Checks:
             listed = sorted(' '.join(c.inner_text().split()) for c in
                             page.query_selector_all('.o_list_view .o_data_row td[name=name]'))
             if 'Colleague Without Mailbox' not in listed or listed != expected:
-                self.fail(f'Invite your colleagues lists {listed}, expected {expected}')
+                self.fail(f'Invite Colleagues lists {listed}, expected {expected}')
             crumb = ' '.join(page.inner_text('.o_breadcrumb').split())
-            if 'Invite your colleagues' not in crumb:
+            if 'Invite Colleagues' not in crumb:
                 self.fail(f'the invite list is titled "{crumb}"')
 
-            # Take the tour: the Inbox, and the tour its "?" starts (#393),
-            # walked to the end so the tour's own check starts clean.
-            admin = call('res.users', 'search', [('login', '=', 'admin')])
-            tour = call('web_tour.tour', 'search', [('name', '=', self.TOUR)])
-            call('web_tour.tour', 'write', tour, {'user_consumed_ids': [(3, admin[0])]})
-            open_settings()
-            page.click('button.o_mailpro_take_tour')
-            page.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
-            where = 'Take the tour from Settings'
-            if (self.tour_step(page, self.TOUR_RECORD, 'record',
-                               'up-and-running-tour-1-record.png', where)
-                    and self.tour_step(page, self.TOUR_LINK, 'link',
-                                       'up-and-running-tour-2-link.png', where)):
-                self.tour_close_dialog(page, where)
-                if (self.tour_step(page, self.TOUR_FILTERS, 'contact',
-                                   'up-and-running-tour-3-contact.png', where)
-                        and self.tour_step(page, self.TOUR_SEARCH, 'search',
-                                           'up-and-running-tour-4-search.png', where)):
-                    self.tour_over(page, where)
-            if not call('web_tour.tour', 'search_count',
-                        [('name', '=', self.TOUR), ('user_consumed_ids', 'in', admin)]):
-                self.fail('the tour taken from Settings is not recorded as seen')
         finally:
             page.emulate_media(reduced_motion='no-preference')
             call('ir.config_parameter', 'set_param', param, False)
@@ -659,15 +631,10 @@ class Checks:
             if not steps[0].query_selector('button:has-text("Connect to Pantalytics")'):
                 self.fail('the Connect button is not on step 1')
             text = block.inner_text()
-            # About (the version and the licence line) stays: a support mail
-            # and the documentation link are wanted before connecting too.
-            for leaked in ('2. Email provider', '3. Internal domains', 'Connect Mailbox',
+            for leaked in ('Email Provider', 'Internal Domains', 'Connect Mailbox',
                            'Connected mailboxes'):
                 if leaked in text:
                     self.fail(f'an unlinked database still shows "{leaked}"')
-            for wanted in ('Elastic License', manifest_version(), 'Documentation'):
-                if wanted not in text:
-                    self.fail(f'an unlinked database no longer shows "{wanted}"')
             self.error_free('Settings without a Pantalytics account')
         finally:
             self.call('pan.mail.license', 'create', {
@@ -700,7 +667,7 @@ class Checks:
             if len(steps) != 1:
                 self.fail(f'a refused key shows {len(steps)} setup steps, expected only step 1')
             head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
-            if head != '1. Pantalytics account Disconnected':
+            if head != 'Pantalytics Account Disconnected':
                 self.fail(f'a refused key reads "{head}" on step 1')
             # One short line, then the button (#366).
             msgs = [' '.join(m.inner_text().split())
@@ -713,7 +680,7 @@ class Checks:
             if len(again) != 1:
                 self.fail(f'a refused key shows {len(again)} Connect again buttons, expected 1')
             text = block.inner_text()
-            for leaked in ('2. Email provider', 'Key Refused', 'recognises',
+            for leaked in ('Email Provider', 'Key Refused', 'recognises',
                            'Sign in with Microsoft', 'Pantalytics app'):
                 if leaked in text:
                     self.fail(f'a refused key still shows "{leaked}"')
@@ -753,7 +720,7 @@ class Checks:
                           f'expected all 5: only incoming waits')
                 return
             head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
-            if head != '1. Pantalytics account Incoming paused':
+            if head != 'Pantalytics Account Incoming paused':
                 self.fail(f'step 1 over the mail limit reads "{head}"')
             text = ' '.join(steps[0].inner_text().split())
             if '500 mails this month. Add a card to keep receiving.' not in text:
@@ -1614,7 +1581,7 @@ class Checks:
             if shown != picked:
                 self.fail(f'the record pane shows "{shown}", expected the picked "{picked}"')
             head = page.query_selector('.o_mailpro_conversation_head .o_mailpro_conversation_title')
-            if not head or head.inner_text().strip() != 'New email':
+            if not head or head.inner_text().strip() != 'New Email':
                 self.fail('the pane head does not say a new email is being written')
             if not page.query_selector(
                     '.o_mailpro_conversation_head button:has-text("Send")'):
@@ -3330,7 +3297,7 @@ class Checks:
         page.wait_for_timeout(600)
 
         save = page.query_selector(
-            '.o_mailpro_conversation_head button:has-text("Save draft")')
+            '.o_mailpro_conversation_head button:has-text("Save Draft")')
         if not save:
             self.fail('an open reply cannot be saved as a draft')
             return
@@ -4509,7 +4476,7 @@ class Checks:
             self.shot('settings-step5-personal.png')
             if len(dots) != 1 or 'o_mailpro_dot_attention' not in dots[0]:
                 self.fail(f'step 5 with a personal notification mailbox shows {dots}, not amber')
-            if 'System email from a personal mailbox' not in msgs:
+            if 'Personal mailbox' not in msgs:
                 self.fail(f'step 5 with a personal notification mailbox reads {msgs}')
             self.click_row(step)
             page.wait_for_selector('.o_list_view', timeout=30000)
@@ -4540,7 +4507,7 @@ class Checks:
             step, dots, msgs = step_5()
             if any('o_mailpro_dot_attention' in d for d in dots):
                 self.fail('step 5 stays amber once a shared mailbox carries the system email')
-            if 'System email from a personal mailbox' in msgs:
+            if 'Personal mailbox' in msgs:
                 self.fail('step 5 still says personal once a shared mailbox carries it')
         finally:
             self.call('pan.mail.mailbox', 'write', [carrier['id']],

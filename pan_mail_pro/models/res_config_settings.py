@@ -235,34 +235,6 @@ class ResConfigSettings(models.TransientModel):
         for record in self:
             record.x_is_copy = is_copy
 
-    # -------------------------------------------------------------------------
-    # About
-    # -------------------------------------------------------------------------
-    x_module_version = fields.Char(
-        string='Version',
-        compute='_compute_module_version',
-        help='The version of Mail Pro this Odoo instance is running.',
-    )
-
-    # `depends` on a defaulted field: 18's onchange on a new settings record
-    # only computes what depends on something, 19 computes the rest as well.
-    @api.depends('company_id')
-    def _compute_module_version(self):
-        """The version the database is actually on, not the one in the source.
-
-        `latest_version` is what `ir.module.module` recorded at the last
-        upgrade. On an instance that pulled new code without upgrading, that
-        differs from the manifest on disk -- which Odoo, confusingly, calls
-        `installed_version` -- and the one that explains the behaviour on
-        screen is the database's. It is also the first thing to ask for in a
-        support mail, which is why it is on the page rather than three clicks
-        into Apps.
-        """
-        version = self.env['ir.module.module'].sudo().search(
-            [('name', '=', 'pan_mail_pro')], limit=1).latest_version
-        for record in self:
-            record.x_module_version = version or ''
-
     def get_values(self):
         """Seed the domains tag field from the stored rows.
 

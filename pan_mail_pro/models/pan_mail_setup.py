@@ -171,8 +171,8 @@ class PanMailSetup(models.AbstractModel):
             # Checked, and refused: never "not checked yet".
             return 'broken', row.error or _('The sign-in cannot read this mailbox.')
         if row and row.can_read == 'yes':
-            return 'open', _('Not yet sent from. It turns green after the first email.')
-        return 'open', _('Not checked yet. The next sync run checks it.')
+            return 'open', _('Not sent from yet')
+        return 'open', _('Not checked yet')
 
     @api.model
     def _provider_accounts(self, provider):
@@ -279,7 +279,7 @@ class PanMailSetup(models.AbstractModel):
 
     @api.model
     def mailbox_alert(self):
-        """One sentence when a mailbox has stopped, or '' when none has.
+        """One short phrase when a mailbox has stopped, or '' when none has.
 
         Not a phase and not a step of its own: mail still flows, one mailbox has
         stopped. It hangs off the mailboxes line of the checklist, which is the
@@ -287,13 +287,10 @@ class PanMailSetup(models.AbstractModel):
         """
         broken = self._mailboxes_in_error()
         if broken:
-            return _('%(count)s mailbox(es) stopped syncing. The rest is unaffected.',
-                     count=len(broken))
+            return _('%(count)s stopped syncing', count=len(broken))
         unreachable = self._mailboxes_refused()
         if unreachable:
-            return _('%(count)s mailbox(es) the provider refuses: no mailbox at the '
-                     'address, or the sign-in may not reach it. The rest is unaffected.',
-                     count=len(unreachable))
+            return _('%(count)s refused by the provider', count=len(unreachable))
         return ''
 
     @api.model
@@ -435,7 +432,7 @@ class PanMailSetup(models.AbstractModel):
         Mail Pro invite already mails each of them the connect link."""
         return {
             'type': 'ir.actions.act_window',
-            'name': _('Invite your colleagues'),
+            'name': _('Invite Colleagues'),
             'res_model': 'res.users',
             'views': [(self.env.ref('base.view_users_tree').id, 'list'),
                       (self.env.ref('base.view_users_form').id, 'form')],

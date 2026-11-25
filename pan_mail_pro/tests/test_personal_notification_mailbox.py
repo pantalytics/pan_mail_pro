@@ -71,7 +71,7 @@ class TestPersonalNotificationMailbox(MailProTestCase):
     def test_the_step_5_row_says_so_in_one_line(self):
         arch = self.env['res.config.settings'].get_view(
             self.env.ref('pan_mail_pro.res_config_settings_view_form').id, 'form')['arch']
-        self.assertIn('System email from a personal mailbox', arch)
+        self.assertIn('Personal mailbox', arch)
         self.assertIn("x_notification_mailbox_type != 'personal'", arch)
 
 
