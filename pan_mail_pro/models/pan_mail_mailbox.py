@@ -988,10 +988,12 @@ class PanMailMailbox(models.Model):
     @api.depends('email')
     @api.depends_context('pan_mail_sync_page')
     def _compute_display_name(self):
-        """The Sync page is a level of its own in the breadcrumb."""
+        """The Sync page and its Sync Level page are levels of their own in
+        the breadcrumb."""
         page = self.env.context.get('pan_mail_sync_page')
+        name = _('Sync Level') if page == 'level' else _('Sync') if page else False
         for record in self:
-            record.display_name = _('Sync') if page else (record.email or '')
+            record.display_name = name or record.email or ''
 
     def action_sign_in(self):
         """The one Sign In on the mailbox page. Mail Pro decides whose
@@ -1022,6 +1024,21 @@ class PanMailMailbox(models.Model):
             'views': [(self.env.ref('pan_mail_pro.view_pan_mail_mailbox_sync_form').id, 'form')],
             'target': 'current',
             'context': {'pan_mail_sync_page': True},
+        }
+
+    def action_open_sync_level(self):
+        """The Sync Level page: the slider and its grid, one level below
+        the Sync page."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Sync Level'),
+            'res_model': 'pan.mail.mailbox',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('pan_mail_pro.view_pan_mail_mailbox_sync_level_form').id, 'form')],
+            'target': 'current',
+            'context': {'pan_mail_sync_page': 'level'},
         }
 
     def action_open_runs(self):

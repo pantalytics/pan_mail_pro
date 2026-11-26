@@ -137,6 +137,22 @@
         </field>
     </record>
 
+    <!-- The Sync Level page, opened from the Sync page's row: the slider
+         with its checkmark grid (`mailpro_sync_level`), the same widget as
+         My Preferences, and nothing else. -->
+    <record id="view_pan_mail_mailbox_sync_level_form" model="ir.ui.view">
+        <field name="name">pan.mail.mailbox.sync.level.form</field>
+        <field name="model">pan.mail.mailbox</field>
+        <field name="priority">110</field>
+        <field name="arch" type="xml">
+            <form string="Sync Level" class="o_mailpro_mailbox_sync_level" create="false" delete="false">
+                <sheet>
+                    <field name="sync_level" widget="mailpro_sync_level" nolabel="1"/>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
     <!-- The Sync page (the Mail Pro canvas, 06 and 07): the same mailbox in
          its second form, opened from the mailbox's Sync row. Settings, the
          switch, and the runs; the chatter beside it. -->
@@ -147,8 +163,15 @@
         <field name="arch" type="xml">
             <form string="Sync" class="o_mailpro_mailbox_sync" create="false" delete="false">
                 <sheet>
-                                        <group string="Settings" class="o_mailpro_sync_settings">
-                        <field name="sync_level" string="Sync Level"/>
+                    <group string="Settings" class="o_mailpro_sync_settings">
+                        <!-- One row with the level; the slider and its grid
+                             of what lands where are a page of their own. -->
+                        <label for="sync_level" string="Sync Level"/>
+                        <div class="d-flex align-items-center gap-2">
+                            <field class="w-auto" name="sync_level" readonly="1" nolabel="1"/>
+                            <button name="action_open_sync_level" type="object" string="Open"
+                                    class="btn-link btn-sm"/>
+                        </div>
                         <!-- Routing is always a row. Replies follow their
                              conversation whatever is set here; from Known
                              Contacts on, a new conversation goes to the team
@@ -164,10 +187,6 @@
                         </div>
                         <field name="sync_start_date" string="Import From"/>
                     </group>
-                    <div class="alert alert-warning" role="alert"
-                         invisible="sync_level != 'everyone'">
-                        Every new sender becomes a contact in Odoo, newsletters included.
-                    </div>
                     <group string="Sync">
                         <label for="sync_enabled" string="Sync"/>
                         <div class="d-flex align-items-center gap-2">

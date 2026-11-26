@@ -5390,8 +5390,8 @@ class Checks:
                                          shots={0: 'sync-slider-stop0-light.png',
                                                 3: 'sync-slider-stop3-light.png'}):
                 return
-            if 'newsletters' not in page.inner_text('.modal .o_form_view'):
-                self.fail('the widest rung is picked without saying what it lets in')
+            if 'newsletters' in page.inner_text('.modal .o_form_view'):
+                self.fail('My Preferences still carries the everyone warning')
             page.click('.modal button[name=preference_save]')
             page.wait_for_timeout(1500)
             dialog = page.query_selector('.o_error_dialog, .o_dialog_error')
@@ -5640,10 +5640,10 @@ class Checks:
         return True
 
     def sync_slider(self):
-        """The sync level on the mailbox's Sync page is Odoo's own selection
-        (canvas 06): the widest is picked, says what it lets in, and saves.
-        The slider and its dark-mode contrast live on My Preferences
-        (`preferences`)."""
+        """The Sync page has one Sync Level row; it opens the Sync Level page,
+        the same slider and grid as My Preferences: every stop walked, the
+        widest saved, no warning under it. Dark-mode contrast is checked on My
+        Preferences (`preferences_dark`)."""
         action = dict(module_menu_actions(self.call)).get('Mailboxes')
         rows = self.call('pan.mail.mailbox', 'search_read',
                          [('is_notification_mailbox', '=', False)],
@@ -5657,26 +5657,38 @@ class Checks:
             page.goto(f'{self.base}/odoo/action-{action}/{mailbox}', wait_until='domcontentloaded')
             page.wait_for_selector('.o_form_view button[name="action_open_sync"]', timeout=30000)
             page.click('.o_form_view button[name="action_open_sync"]')
-            field = '.o_form_view .o_field_widget[name="sync_level"]'
-            page.wait_for_selector(field, timeout=30000)
+            # One Sync Level row on the Sync page, no slider there.
+            page.wait_for_selector('.o_form_view button[name="action_open_sync_level"]',
+                                   timeout=30000)
+            if page.query_selector('.o_form_view .o_mailpro_sync_level'):
+                self.fail('the Sync page draws the slider inline; it is a page of its own')
+            self.shot('mailbox-sync-page.png')
+            page.click('.o_form_view button[name="action_open_sync_level"]')
+            page.wait_for_selector(
+                '.o_form_view .o_field_widget[name="sync_level"] .o_mailpro_sync_level',
+                timeout=30000)
             page.wait_for_timeout(600)
-            native = page.query_selector(f'{field} select')
-            if native:
-                native.select_option(label='Replies, existing and new contacts')
-            else:
-                page.click(f'{field} input, {field} .o_select_menu_toggler, {field}')
-                page.click('.o_select_menu_item:has-text("Replies, existing and new contacts"), '
-                           '.dropdown-item:has-text("Replies, existing and new contacts")',
-                           timeout=10000)
-            page.wait_for_timeout(600)
-            self.shot('mailbox-sync-slider.png')
-            if 'newsletters' not in page.inner_text('.o_form_view .o_form_sheet'):
-                self.fail('the widest level is picked without saying what it lets in')
-            if self.visible('.o_form_view .o_field_widget[name="alias_id"]') is False:
-                self.fail('the widest level offers no team to route to')
+            crumbs = page.inner_text('.o_breadcrumb')
+            if 'Sync Level' not in crumbs or 'Sync' not in crumbs.replace('Sync Level', ''):
+                self.fail(f'the Sync Level page breadcrumb reads {crumbs!r}')
+            # The same slider and grid as My Preferences, every stop
+            # clicked; it ends on the widest.
+            if not self.sync_slider_walk(page, '.o_form_view', 'sync_level', 'the Sync Level page',
+                                         shots={3: 'mailbox-sync-slider.png'}):
+                return
+            if 'newsletters' in page.inner_text('.o_form_view .o_form_sheet'):
+                self.fail('the widest level still carries the everyone warning')
             page.click('.o_form_button_save')
             page.wait_for_timeout(1500)
             self.error_free('saving the sync level')
+            # Back on the Sync page, the widest level offers a team.
+            page.click('.o_breadcrumb .breadcrumb-item:has-text("Sync") a, '
+                       '.o_breadcrumb a:text-is("Sync")')
+            page.wait_for_selector('.o_form_view button[name="action_open_sync_level"]',
+                                   timeout=30000)
+            if self.visible('.o_form_view .o_field_widget[name="alias_id"]') is False:
+                self.fail('the widest level offers no team to route to')
+            self.shot('mailbox-sync-routing.png')
             level = self.call('pan.mail.mailbox', 'read', [mailbox],
                               fields=['sync_level'])[0]['sync_level']
             if level != 'everyone':
