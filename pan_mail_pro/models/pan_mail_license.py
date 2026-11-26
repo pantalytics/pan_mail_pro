@@ -327,6 +327,10 @@ class PanMailLicense(models.Model):
     # pan_mail_license_views.xml`): one label, whichever of the two the
     # server named.
     connected_by_name = fields.Char(string='Connected by', compute='_compute_connected_by_name')
+    # The account page's two rows (the Mail Pro canvas, 02): who and when on
+    # one line, and the workspace this Odoo is connected to.
+    connected_line = fields.Char(string='Connected By', compute='_compute_connected_by_name')
+    workspace_label = fields.Char(string='Workspace', compute='_compute_workspace_label')
     # What the account page acts on, now that step 1 of the checklist only
     # reports it (#382): incoming waiting on a card, and whether Check again
     # has a question to ask (the same test `action_check_approval` makes).
@@ -384,10 +388,19 @@ class PanMailLicense(models.Model):
         self.ensure_one()
         return self.connected_account or self.connected_user_id.name or ''
 
-    @api.depends('connected_account', 'connected_user_id')
+    @api.depends('connected_account', 'connected_user_id', 'connected_on')
     def _compute_connected_by_name(self):
         for link in self:
             link.connected_by_name = link.connected_by()
+            when = link.connected_on and fields.Datetime.context_timestamp(
+                link, link.connected_on).strftime('%d %b %Y')
+            link.connected_line = ', '.join(p for p in (link.connected_by_name, when) if p) \
+                or False
+
+    @api.depends('entitlement_json')
+    def _compute_workspace_label(self):
+        for link in self:
+            link.workspace_label = link.workspace_name() or False
 
     def _compute_attention(self):
         for link in self:

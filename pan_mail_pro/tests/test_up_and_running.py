@@ -1,17 +1,13 @@
 # -*- coding: utf-8 -*-
-"""The end of onboarding: "Mail Pro is up and running", once (#391, #415).
+"""The checklist's end (#391, #415): the five steps done.
 
-It fires when the five checklist steps are done: green, or amber on step 5,
-a personal mailbox carrying the system email. The checklist is
-configuration only, so it does not wait for the first mail on a record; the
-heartbeat's `setup.done` tells the Pantalytics app, which walks the person
-to it. The confetti is once per database, a config parameter, and the one
-next action opens the colleagues who have not connected a mailbox yet.
+Done is green, or amber on step 5, a personal mailbox carrying the system
+email. The checklist is configuration only, so it does not wait for the
+first mail on a record; the heartbeat's `setup.done` tells the Pantalytics
+app, which walks the person to it. The page keeps the checklist when it is
+done (26 Nov 2026): no line that folds it, no confetti.
 """
-from odoo.exceptions import AccessError
 from odoo.tests import tagged
-
-from odoo.addons.pan_mail_pro.models.pan_mail_setup import CELEBRATED_PARAM
 
 from .common import MailProTestCase
 
@@ -97,7 +93,8 @@ class TestUpAndRunning(MailProTestCase):
         for step in STEPS:
             self.assertIn(f"x_{step}_dot != 'ok'", arch)
         self.assertNotIn('x_notification_access_state != \'ok\'', arch)
-        self.assertIn('name="mailpro_up_and_running"', arch)
+        # Setup is the page, done or not: nothing folds the steps away.
+        self.assertNotIn('mailpro_up_and_running', arch)
         for name in ('>Mailboxes<', '>Notification Mailbox<'):
             self.assertIn(name, arch)
 
@@ -108,7 +105,6 @@ class TestUpAndRunning(MailProTestCase):
         self.assertFalse(self.env['mail.message'].sudo().search_count(
             [('x_direction', '=', 'incoming')]))
         self.assertTrue(self.Setup.up_and_running())
-        self.assertTrue(self.settings().x_up_and_running)
 
     def test_an_amber_step_5_is_done(self):
         """A personal mailbox carrying the system email works; a shared one
@@ -116,9 +112,7 @@ class TestUpAndRunning(MailProTestCase):
         self.personal_mailbox.is_notification_mailbox = True
         self.assertEqual(self.Setup.step_dots()['notification'], 'attention')
         self.assertTrue(self.Setup.up_and_running())
-        settings = self.settings()
-        self.assertTrue(settings.x_up_and_running)
-        self.assertEqual(settings.x_notification_dot, 'attention', 'the line reads this')
+        self.assertEqual(self.settings().x_notification_dot, 'attention')
 
     def test_no_working_mailbox_is_not_done(self):
         for user in (self.notif_owner, self.other_user, self.salesperson):
@@ -126,7 +120,6 @@ class TestUpAndRunning(MailProTestCase):
         dots = self.Setup.step_dots()
         self.assertEqual(dots['mailboxes'], 'todo')
         self.assertFalse(self.Setup.up_and_running(dots))
-        self.assertFalse(self.settings().x_up_and_running)
 
     def test_red_or_open_steps_block_and_so_does_another_amber(self):
         """Only step 5's amber is a recommendation; an own Azure app on step
@@ -140,61 +133,20 @@ class TestUpAndRunning(MailProTestCase):
         self.assertFalse(self.Setup.up_and_running())
 
     def test_a_red_step_later_opens_the_checklist_again(self):
-        """Not sticky: the line comes back where the red dot is."""
+        """Not sticky: a red step later means not done again."""
         self.assertTrue(self.Setup.up_and_running())
         self.shared_mailbox.sudo().state = 'error'
         self.assertFalse(self.Setup.up_and_running())
 
-    # ----------------------------------------------------------- the confetti
-
-    def test_confetti_once_per_database(self):
-        self.assertFalse(self.Params.get_param(CELEBRATED_PARAM))
-        self.assertTrue(self.Setup.celebrate_once())
-        self.assertTrue(self.Params.get_param(CELEBRATED_PARAM))
-        self.assertFalse(self.Setup.celebrate_once(), 'a reload is not a second time')
-        self.assertFalse(self.Setup.with_user(self.env.ref('base.user_admin')).celebrate_once())
-
-    def test_no_confetti_before_the_end(self):
-        """A call before the line is done cannot spend the moment."""
-        self.env['pan.mail.domain'].search([]).unlink()
-        self.assertFalse(self.Setup.celebrate_once())
-        self.assertFalse(self.Params.get_param(CELEBRATED_PARAM))
-
-    def test_only_an_administrator_spends_it(self):
-        with self.assertRaises(AccessError):
-            self.Setup.with_user(self.salesperson).celebrate_once()
-        self.assertFalse(self.Params.get_param(CELEBRATED_PARAM))
-
-    # ------------------------------------------------------- the next action
-
-    def test_invite_opens_the_colleagues_with_no_mailbox(self):
-        action = self.Setup.action_invite_colleagues()
-        self.assertEqual(action['res_model'], 'res.users')
-        users = self.env['res.users'].search(action['domain'])
-        self.assertIn(self.inbox_user, users, 'internal, nothing connected')
-        for absent in (self.notif_owner, self.salesperson, self.portal_user):
-            self.assertNotIn(absent, users)
-        self.assertEqual(self.settings().x_unconnected_count,
-                         self.env['res.users'].sudo().search_count(action['domain']))
-
-    def test_the_invite_on_that_list_is_the_existing_nudge(self):
-        """The list the action opens carries Send Mail Pro invite, which mails
-        the one-click connect link to whoever it would help."""
-        arch = self.env['res.users'].get_view(
-            self.env.ref('base.view_users_tree').id, 'list')['arch']
-        self.assertIn('action_send_connect_invite', arch)
-
     # ---------------------------------------------------- the first onchange
 
-    def test_the_first_onchange_computes_the_dots_and_the_line(self):
+    def test_the_first_onchange_computes_the_dots(self):
         """The web client opens Settings with one onchange over every field,
         and 18 computes only what depends on a field that had a default
         there (19 and 20 compute the rest as well). Measured 2026-11-03:
-        without a dependency the checklist drew no dots on 18 and the line
-        never came."""
+        without a dependency the checklist drew no dots on 18."""
         dots = [f'x_{step}_dot' for step in STEPS]
-        spec = {name: {} for name in dots + ['x_up_and_running', 'company_id']}
+        spec = {name: {} for name in dots + ['company_id']}
         value = self.env['res.config.settings'].onchange({}, [], spec).get('value', {})
         for name in dots:
             self.assertIn(name, value, f'{name} is not computed by the first onchange')
-        self.assertEqual(bool(value.get('x_up_and_running')), self.Setup.up_and_running())

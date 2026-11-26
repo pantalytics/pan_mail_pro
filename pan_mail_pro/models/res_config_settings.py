@@ -187,41 +187,30 @@ class ResConfigSettings(models.TransientModel):
     )
 
     # -------------------------------------------------------------------------
-    # The five dots, and the line that replaces them (#391, #415). The colour
-    # of each dot is decided once, in `pan.mail.setup.step_dots`; the view
-    # draws the word and "up and running" asks whether all five are done.
+    # The five dots. The colour of each dot is decided once, in
+    # `pan.mail.setup.step_dots`; the view draws the word. The checklist stays
+    # on the page when all five are done (26 Nov 2026): Setup is the page.
     # -------------------------------------------------------------------------
     x_account_dot = fields.Selection(DOTS, compute='_compute_step_dots')
     x_provider_dot = fields.Selection(DOTS, compute='_compute_step_dots')
     x_domains_dot = fields.Selection(DOTS, compute='_compute_step_dots')
     x_mailboxes_dot = fields.Selection(DOTS, compute='_compute_step_dots')
     x_notification_dot = fields.Selection(DOTS, compute='_compute_step_dots')
-    # All five done: the checklist folds into one line, "Mail Pro is up and
-    # running", with Show setup under it.
-    x_up_and_running = fields.Boolean(compute='_compute_step_dots')
-    # The internal users with no mailbox connected yet: the one next action
-    # is offered only while there is somebody to invite.
-    x_unconnected_count = fields.Integer(compute='_compute_step_dots')
 
-    # A dependency so the web client's first onchange computes the dots and
-    # the line: 18 computes only what depends on a field that had a default
+    # A dependency so the web client's first onchange computes the dots: 18
+    # computes only what depends on a field that had a default
     # (`_compute_is_copy` says the same). Measured 2026-11-03: without it, 18
-    # drew the checklist with no dots and never the up-and-running line.
+    # drew the checklist with no dots.
     @api.depends('company_id')
     def _compute_step_dots(self):
         Setup = self.env['pan.mail.setup']
         dots = Setup.step_dots()
-        running = Setup.up_and_running(dots)
-        unconnected = self.env['res.users'].sudo().search_count(
-            Setup._unconnected_colleagues_domain())
         for record in self:
             record.x_account_dot = dots['account']
             record.x_provider_dot = dots['provider']
             record.x_domains_dot = dots['domains']
             record.x_mailboxes_dot = dots['mailboxes']
             record.x_notification_dot = dots['notification']
-            record.x_up_and_running = running
-            record.x_unconnected_count = unconnected
 
     # -------------------------------------------------------------------------
     # A copy (pan_mail_pro#379): one line above the checklist, no switch. The

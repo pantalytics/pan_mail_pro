@@ -212,6 +212,22 @@ class TestLicense(TransactionCase):
         self.assertEqual(link.connected_by_name, 'rutger@pantalytics.com')
         settings = self.env['res.config.settings'].create({})
         self.assertTrue(settings.x_setup_account_done)
+        self.assertTrue(link.connected_line.startswith('rutger@pantalytics.com, '))
+
+    def test_the_account_page_is_two_rows_and_disconnect(self):
+        """The canvas, 02: the status, Disconnect, two rows. A button that
+        fixes something shows only while there is something to fix."""
+        from lxml import etree
+        view = self.env.ref('pan_mail_pro.view_pan_mail_license_form')
+        arch = etree.fromstring(self.env['pan.mail.license'].get_view(view.id)['arch'])
+        for name in ('workspace_label', 'connected_line', 'status'):
+            self.assertTrue(arch.xpath(f'//field[@name="{name}"]'), name)
+        for gone in ('plan', 'valid_until', 'last_check', 'connected_on'):
+            self.assertFalse(arch.xpath(f'//field[@name="{gone}"]'), gone)
+        always = [b.get('string') for b in arch.xpath('//header//button')
+                  if not b.get('invisible')]
+        self.assertEqual(always, ['Disconnect'])
+        self.assertNotIn('Usage and billing', etree.tostring(arch).decode())
 
     def test_the_settings_line_opens_the_account_page(self):
         """Step 1 reads "Connected" and its arrow lands on the row, the way

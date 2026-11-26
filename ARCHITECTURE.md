@@ -1136,29 +1136,16 @@ Three properties are worth naming, because each was a bug first:
 - **Inviting the team is not a step.** Mail flows with one connected
   account, so a colleague who has not signed in is a rollout task, not a gate,
   and the invite button lives on the user list, where the users are. A second
-  copy in Settings was a second front door to one action. The end of the line
-  below points at that list; it does not copy the button.
-- **The line has an end (#391, #415).** Five steps done
-  (`pan.mail.setup.up_and_running`): the checklist folds into one
-  line, "Mail Pro is up and running", with Show setup under it. Done is green,
-  and on step 5 amber too: a personal mailbox carrying the system email works
-  and a shared one is a recommendation (#387), so the line keeps step 5's own
-  sentence under its headline, linked to Mailboxes. Red, the open dot, or
-  another step's amber keep the checklist. The checklist is configuration
-  only: the first mail on a record is an onboarding moment, not a setting, so
-  it is not waited for here. The heartbeat's `setup.done` carries this answer,
-  and the Pantalytics app walks the person to their first mail from it. The dot colours
-  are decided once, in `pan.mail.setup.step_dots`; the view draws the word and
-  the end of the line asks whether all five are done, so the two cannot
-  disagree. Not sticky: a step that turns red later unfolds the checklist,
-  because that is where the red dot is. The confetti is once per database
-  (`pan_mail_pro.up_and_running_at`, spent by `celebrate_once` from the page
-  that first draws the line) and never under `prefers-reduced-motion`. The one
-  next action, Invite your colleagues to connect their mailbox, opens the
-  internal users with no mailbox connected on Odoo's own user list, where Send
-  Mail Pro invite already is. Beside it, secondary, Take the tour opens the
-  Inbox with `pan_mail_tour` in the context, and the Inbox starts its tour
-  (#393) once the list has mail, as its "?" would, recorded as seen.
+  copy in Settings was a second front door to one action.
+- **The checklist stays the page (26 Nov 2026).** Five steps done
+  (`pan.mail.setup.up_and_running`: green, and on step 5 amber too, a
+  personal mailbox carrying the system email, #387) changes nothing on
+  screen: Settings shows the five steps, green. The line that folded them
+  into "Mail Pro is up and running", its confetti and its Invite Colleagues
+  button (#391, #415) are gone; the invite lives on the user list and the
+  tour on the Inbox's "?". The answer still rides the heartbeat as
+  `setup.done`, and the Pantalytics app walks the person to their first mail
+  from it. The dot colours are decided once, in `pan.mail.setup.step_dots`.
 
 ---
 

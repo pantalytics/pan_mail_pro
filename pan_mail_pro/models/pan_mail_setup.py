@@ -49,8 +49,7 @@ error after the fact is worse than being asked in order.
 """
 import logging
 
-from odoo import _, api, fields, models
-from odoo.exceptions import AccessError
+from odoo import _, api, models
 
 from .pan_mail_domain import PUBLIC_MAIL_DOMAINS
 
@@ -58,7 +57,6 @@ _logger = logging.getLogger(__name__)
 
 # When the settings page first said "Mail Pro is up and running" on this
 # database (#391). Set once; the confetti plays only while it is empty.
-CELEBRATED_PARAM = 'pan_mail_pro.up_and_running_at'
 
 PHASE_SETUP = 'setup'
 PHASE_SYNCING = 'syncing'
@@ -406,45 +404,6 @@ class PanMailSetup(models.AbstractModel):
             dots = self.step_dots()
         return all(dot == 'ok' or (step, dot) == ('notification', 'attention')
                    for step, dot in dots.items())
-
-    @api.model
-    def celebrate_once(self):
-        """True the first time the end of the line is shown on this database.
-
-        The confetti is once per database, not per person and not per page
-        load, so the moment is a config parameter. Asked by the settings page
-        when it draws "Mail Pro is up and running"; it answers False when the
-        database is not there, so a call from anywhere else cannot spend it.
-        """
-        if not self.env.user.has_group('base.group_system'):
-            raise AccessError(_('Only an administrator can open the Mail Pro settings.'))
-        Params = self.env['ir.config_parameter'].sudo()
-        if Params.get_param(CELEBRATED_PARAM) or not self.up_and_running():
-            return False
-        Params.set_param(CELEBRATED_PARAM, fields.Datetime.to_string(fields.Datetime.now()))
-        _logger.info('[Mail Pro] Up and running')
-        return True
-
-    @api.model
-    def action_invite_colleagues(self):
-        """The one next action once Mail Pro runs: the internal users who
-        have not connected a mailbox, on Odoo's own user list, where Send
-        Mail Pro invite already mails each of them the connect link."""
-        return {
-            'type': 'ir.actions.act_window',
-            'name': _('Invite Colleagues'),
-            'res_model': 'res.users',
-            'views': [(self.env.ref('base.view_users_tree').id, 'list'),
-                      (self.env.ref('base.view_users_form').id, 'form')],
-            'search_view_id': [self.env.ref('base.view_users_search').id],
-            'domain': self._unconnected_colleagues_domain(),
-            'context': {'is_action_res_users': True},
-            'target': 'current',
-        }
-
-    @api.model
-    def _unconnected_colleagues_domain(self):
-        return [('share', '=', False), ('x_pan_mail_connected', '=', False)]
 
     @api.model
     def not_ready_error(self):

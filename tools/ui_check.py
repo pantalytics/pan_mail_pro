@@ -307,14 +307,12 @@ class Checks:
     # -- The end of onboarding (#391) ----------------------------------------
 
     def up_and_running(self):
-        """Five steps done (#415): the checklist folds into "Mail Pro is
-        up and running", confetti flies once per database and never on a
-        reload, Show Setup unfolds the five green steps, and the one next
-        action opens the colleagues who have not connected a mailbox. No
-        illustration and no second button: the Inbox has its own tour. The
-        seed is mid-setup on purpose (an own Azure app, two stopped
-        mailboxes, a personal notification mailbox), so the walk stands the green in for itself and puts the seed back after.
-        No mail has to have arrived: the checklist is configuration only.
+        """Five steps done: Setup stays the page (26 Nov 2026). The five
+        steps are on screen and green, no line folds them away, no confetti
+        and no next action of its own. The seed is mid-setup on purpose (an
+        own Azure app, two stopped mailboxes, a personal notification
+        mailbox), so the walk stands the green in for itself and puts the
+        seed back after.
         """
         page = self.page
         call = self.call
@@ -332,25 +330,7 @@ class Checks:
         stopped = [m['id'] for m in mailboxes if m['state'] == 'error']
         accounts = call('pan.mail.account', 'search', [('provider', '=', 'outlook')],
                         context={'active_test': False})
-        param = 'pan_mail_pro.up_and_running_at'
-        made_access, colleague = [], None
-        celebrate = '**/web/dataset/call_kw/pan.mail.setup/celebrate_once'
-
-        def open_settings():
-            with page.expect_response(celebrate, timeout=60000) as answer:
-                page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
-                page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
-                page.click('a.tab[data-key=pan_mail_pro]')
-                page.wait_for_selector('.o_mailpro_running', timeout=30000)
-            return answer.value.json().get('result')
-
-        def flew():
-            try:
-                page.wait_for_selector('.o_mailpro_confetti', state='attached', timeout=2000)
-                return True
-            except Exception:
-                return False
-
+        made_access = []
         try:
             call('pan.mail.provider', 'unlink', [r['id'] for r in rows])
             call('pan.mail.provider', 'create', {
@@ -366,132 +346,29 @@ class Checks:
                     made_access.append(call('pan.mail.mailbox.access', 'create', {
                         'mailbox_id': shared['id'], 'account_id': account,
                         'can_read': 'yes', 'can_send': 'yes'}))
-            # A colleague with nothing connected. Archived again after, and
-            # found again on a second run: a login is unique, archived or not.
-            found = call('res.users', 'search', [('login', '=', 'colleague@example.com')],
-                         context={'active_test': False})
-            if found:
-                colleague = found[0]
-                call('res.users', 'write', found, {'active': True})
-            else:
-                colleague = call('res.users', 'create', {
-                    'name': 'Colleague Without Mailbox', 'login': 'colleague@example.com',
-                    'email': 'colleague@example.com'}, context={'no_reset_password': True})
-            call('ir.config_parameter', 'set_param', param, False)
-
-            # The first time: the line and confetti.
-            first = open_settings()
-            confetti = flew()
-            page.wait_for_timeout(350)
-            self.shot('settings-up-and-running-confetti.png')
-            page.wait_for_timeout(2500)
-            self.shot('settings-up-and-running.png')
-            if first is not True:
-                self.fail(f'the first page that says up and running was not the first ({first})')
-            if not confetti:
-                self.fail('no confetti the first time Mail Pro is up and running')
-            if page.query_selector('.o_mailpro_running svg'):
-                self.fail('the up-and-running line still carries an illustration')
-            if page.query_selector('.o_mailpro_confetti'):
-                self.fail('the confetti layer stays on the page after it landed')
-            block = page.query_selector('div.app_settings_block[data-key=pan_mail_pro]')
-            title = ' '.join(page.inner_text('.o_mailpro_running_title').split())
-            if title != 'Mail Pro is up and running':
-                self.fail(f'the end of the line reads "{title}"')
-            if '\u2014' in block.inner_text():
-                self.fail('the settings page carries an em dash')
-            shown = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
-            if shown:
-                self.fail(f'{len(shown)} setup steps are still on screen once it is up and running')
-            primary = [b.inner_text().strip() for b in block.query_selector_all('.btn-primary')
-                       if b.is_visible()]
-            if primary != ['Invite Colleagues']:
-                self.fail(f'the one next action reads {primary}')
-            if page.query_selector('.o_mailpro_running_msg'):
-                self.fail('a shared notification mailbox still shows the personal-mailbox line')
-            secondary = [b.inner_text().strip()
-                         for b in block.query_selector_all('.o_mailpro_running .btn-secondary')
-                         if b.is_visible()]
-            if secondary:
-                self.fail(f'beside the invite: {secondary}, expected nothing')
-
-            # A reload is not a second time, and Show setup is a click away.
-            again = open_settings()
-            if again is not False or flew():
-                self.fail('the confetti flew again on a reload')
-            toggle = page.query_selector('button.o_mailpro_show_setup')
-            if not toggle or toggle.inner_text().strip() != 'Show Setup':
-                self.fail('the folded checklist offers no "Show Setup"')
-            else:
-                toggle.click()
-                page.wait_for_timeout(500)
-                steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
-                self.shot('settings-up-and-running-setup.png')
-                if len(steps) != 5:
-                    self.fail(f'Show setup shows {len(steps)} steps, expected 5')
-                for index, step in enumerate(steps, start=1):
-                    dots = [d.get_attribute('class') for d in step.query_selector_all('.o_mailpro_dot')
-                            if d.is_visible()]
-                    if len(dots) != 1 or 'o_mailpro_dot_ok' not in dots[0]:
-                        self.fail(f'step {index} under Show setup shows {dots}, not green')
-                if toggle.inner_text().strip() != 'Hide Setup':
-                    self.fail(f'the open checklist\'s button reads "{toggle.inner_text().strip()}"')
-                self.rows_only_report(steps, 'up and running, unfolded')
-
-            # Step 5 amber, a personal mailbox carrying the system email
-            # (#387): still up and running, with step 5's own line under the
-            # headline, which opens Mailboxes.
-            call('pan.mail.mailbox', 'write', [carrier['id']], {'is_notification_mailbox': True})
-            open_settings()
-            page.wait_for_timeout(500)
-            self.shot('settings-up-and-running-personal.png')
-            line = page.query_selector('.o_mailpro_running_msg')
-            if not line or not line.is_visible():
-                self.fail('up and running with a personal notification mailbox shows no line for it')
-            elif ' '.join(line.inner_text().split()) != 'Personal mailbox':
-                self.fail(f'the personal-mailbox line reads "{line.inner_text().strip()}"')
-            else:
-                line.click()
-                page.wait_for_selector('.o_list_view', timeout=30000)
-                page.wait_for_timeout(800)
-                crumb = ' '.join(page.inner_text('.o_breadcrumb').split())
-                if 'Mailboxes' not in crumb:
-                    self.fail(f'the personal-mailbox line opens "{crumb}", not Mailboxes')
-            call('pan.mail.mailbox', 'write', [shared['id']], {'is_notification_mailbox': True})
-
-            # Under prefers-reduced-motion the first time is still the first
-            # time, and nothing moves.
-            call('ir.config_parameter', 'set_param', param, False)
-            page.emulate_media(reduced_motion='reduce')
-            still = open_settings()
-            if still is not True:
-                self.fail('the first time under reduced motion was not the first')
-            if flew():
-                self.fail('confetti flew under prefers-reduced-motion')
-            page.emulate_media(reduced_motion='no-preference')
-
-            # The next action: the colleagues with no mailbox, on Odoo's own
-            # user list, where Send Mail Pro invite mails them the link.
-            expected = sorted(u['name'] for u in call(
-                'res.users', 'search_read',
-                [('share', '=', False), ('x_pan_mail_connected', '=', False)], fields=['name']))
-            page.click('button.o_mailpro_invite')
-            page.wait_for_selector('.o_list_view .o_data_row', timeout=30000)
-            page.wait_for_timeout(800)
-            self.shot('invite-colleagues.png')
-            listed = sorted(' '.join(c.inner_text().split()) for c in
-                            page.query_selector_all('.o_list_view .o_data_row td[name=name]'))
-            if 'Colleague Without Mailbox' not in listed or listed != expected:
-                self.fail(f'Invite Colleagues lists {listed}, expected {expected}')
-            crumb = ' '.join(page.inner_text('.o_breadcrumb').split())
-            if 'Invite Colleagues' not in crumb:
-                self.fail(f'the invite list is titled "{crumb}"')
-
+            if not call('pan.mail.setup', 'up_and_running'):
+                self.fail('the walk did not get all five steps done')
+            page.goto(f'{self.base}/odoo/settings', wait_until='domcontentloaded')
+            page.wait_for_selector('a.tab[data-key=pan_mail_pro]', timeout=60000)
+            page.click('a.tab[data-key=pan_mail_pro]')
+            page.wait_for_selector('.o_mailpro_step', timeout=30000)
+            page.wait_for_timeout(1500)
+            self.shot('settings-done.png')
+            steps = [s for s in page.query_selector_all('.o_mailpro_step') if s.is_visible()]
+            if len(steps) != 5:
+                self.fail(f'with every step done Settings shows {len(steps)} steps, expected 5')
+            for index, step in enumerate(steps, start=1):
+                dots = [d.get_attribute('class') for d in step.query_selector_all('.o_mailpro_dot')
+                        if d.is_visible()]
+                if len(dots) != 1 or 'o_mailpro_dot_ok' not in dots[0]:
+                    self.fail(f'step {index} with every step done shows {dots}, not green')
+            for gone in ('.o_mailpro_running', '.o_mailpro_confetti', 'button.o_mailpro_invite'):
+                if page.query_selector(gone):
+                    self.fail(f'Settings still draws the up-and-running screen ({gone})')
+            if 'up and running' in page.inner_text('div.app_settings_block[data-key=pan_mail_pro]'):
+                self.fail('Settings still says "up and running"')
+            self.rows_only_report(steps, 'every step done')
         finally:
-            page.emulate_media(reduced_motion='no-preference')
-            call('ir.config_parameter', 'set_param', param, False)
-            if colleague:
-                call('res.users', 'write', [colleague], {'active': False})
             if made_access:
                 call('pan.mail.mailbox.access', 'unlink', made_access)
             call('pan.mail.mailbox', 'write', [carrier['id']], {'is_notification_mailbox': True})
@@ -541,18 +418,23 @@ class Checks:
             self.fail('step 1 has no arrow to the account page')
             return
         arrow.click()
-        page.wait_for_selector('.o_field_widget[name=connected_by_name]', timeout=30000)
+        page.wait_for_selector('.o_field_widget[name=connected_line]', timeout=30000)
         page.wait_for_timeout(800)
         self.shot('settings-account.png')
         form = page.query_selector('.o_form_view')
         text = form.inner_text()
-        for wanted in ('Connected by', 'seed@pantalytics.test', 'Valid Until'):
+        for wanted in ('Connected By', 'seed@pantalytics.test'):
             if wanted not in text:
                 self.fail(f'the account page does not show "{wanted}"')
-        for wanted in ('Usage and billing', 'Disconnect'):
-            if not any(b.is_visible() and b.inner_text().strip() == wanted
-                       for b in form.query_selector_all('button')):
-                self.fail(f'the account page offers no "{wanted}"')
+        # The canvas, 02: on a healthy link the one button is Disconnect.
+        # Plan, valid-until, last check and Usage and billing are not on it.
+        buttons = [b.inner_text().strip() for b in
+                   form.query_selector_all('.o_form_statusbar button') if b.is_visible()]
+        if buttons != ['Disconnect']:
+            self.fail(f'the account page offers {buttons}, expected only Disconnect')
+        for gone in ('Valid Until', 'Last Check', 'Plan'):
+            if gone in text:
+                self.fail(f'the account page still shows "{gone}"')
         # Read-only: the row is written by the pairing and the heartbeat.
         if form.query_selector('.o_form_editable'):
             self.fail('the account page opened editable')

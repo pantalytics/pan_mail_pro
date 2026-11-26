@@ -23,7 +23,6 @@
                     <field name="x_domains_dot" invisible="1"/>
                     <field name="x_mailboxes_dot" invisible="1"/>
                     <field name="x_notification_dot" invisible="1"/>
-                    <field name="x_up_and_running" invisible="1"/>
 
                     <!-- The checklist sits in Odoo's own settings container so
                          it is capped and indented like every other block on this
@@ -59,14 +58,6 @@
                     <div class="col-12 o_setting_box o_mailpro_copy_marker" role="status" invisible="not x_is_copy">
                         This is a copy. Mail is shown, not sent.
                     </div>
-                    <!-- The end of the line (#391, #415): all five dots
-                         done, an amber step 5 included. The five steps fold
-                         under one line and its one next action,
-                         and Show setup unfolds them again; the widget holds
-                         that fold, so it is a click and never a change to
-                         save. Confetti once per database. -->
-                    <widget name="mailpro_up_and_running" class="col-12 o_setting_box o_mailpro_running_box"
-                            invisible="not x_up_and_running"/>
                     <div class="col-12 o_setting_box o_mailpro_steps">
 
                     <!-- Step 1. One primary action per state, and the code is
