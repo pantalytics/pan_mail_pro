@@ -47,14 +47,7 @@
         <field name="search_view_id" ref="view_pan_mail_mailbox_access_search"/>
         <field name="context">{'search_default_group_mailbox': 1}</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_empty_folder">Nothing checked yet</p>
-            <p>
-                One line per sign-in and mailbox: whether the provider lets
-                that sign-in read the mailbox and send as its address, as it
-                last answered. The sync checks every mailbox once an hour,
-                every consent checks the mailboxes it serves, and every send
-                writes what it met.
-            </p>
+            <p>Nothing checked yet</p>
         </field>
     </record>
 

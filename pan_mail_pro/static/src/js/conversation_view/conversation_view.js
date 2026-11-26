@@ -38,10 +38,6 @@ import { View } from "@web/views/view";
 import { ConfirmationDialog } from "@web/core/confirmation_dialog/confirmation_dialog";
 import { defineProps } from "@pan_mail_pro/compat/owl";
 import { fetchFollowers, storeModel, storeRecords, threadModel } from "@pan_mail_pro/compat/store";
-// The wrapper Odoo's own navbar puts around every systray item, for the
-// same reason it does: this bar is the only one on the screen, and one
-// broken counter must not take the whole Inbox with it.
-import { ErrorHandler } from "@web/core/utils/components";
 import { Dropdown } from "@web/core/dropdown/dropdown";
 import { useDropdownState } from "@web/core/dropdown/dropdown_hooks";
 import { _t } from "@web/core/l10n/translation";
@@ -256,7 +252,7 @@ export class ConversationView extends Component {
     static template = "pan_mail_pro.ConversationView";
     static components = {
         OdooRecordPane, ComposerForm, Activity, MailProAttachmentList, FileUploader,
-        Dropdown, FollowerList, SearchBar, ErrorHandler,
+        Dropdown, FollowerList, SearchBar,
     };
     static propsSchema = ["*"];
     // A client action's name in the browser tab is the component's, not the
@@ -298,18 +294,6 @@ export class ConversationView extends Component {
             enabled: () => this.panes.state.small && this.panes.state.zoom,
             onRight: (dx) => this.toggleZoom(dx),
         });
-        // The systray, borrowed rather than rebuilt. This action is
-        // `fullscreen`, so `web.WebClient` draws no navbar above the Inbox
-        // and nothing else would render the activity and message counters,
-        // the company or the user menu. They are components in a registry,
-        // and a registry can be read from here as well as from the navbar.
-        // `UPDATE` is how an addon adds one after this screen is mounted.
-        this.systrayRegistry = registry.category("systray");
-        useBus(this.systrayRegistry, "UPDATE", () => this.render());
-        // Items whose component threw once. Odoo's navbar patches the entry
-        // it just copied, which does nothing on the next render; a set of
-        // keys the getter filters on actually keeps the icon away.
-        this.brokenSystray = new Set();
         this.composer = useComposer({
             onSent: () => this.onReplySent(),
             onDraftSaved: (row) => this.onDraftSaved(row),
@@ -2182,33 +2166,6 @@ export class ConversationView extends Component {
     // --------------------------------------------------------------- render
 
     /**
-     * What the navbar would have shown on the right, in the order it shows
-     * it: the registry is sorted by sequence and the navbar reverses it, so
-     * the lowest sequence ends up furthest right. Reading it the same way is
-     * what keeps the user menu where a reader's hand already goes.
-     */
-    get systrayItems() {
-        return this.systrayRegistry
-            .getEntries()
-            .map(([key, value]) => ({ key, ...value }))
-            .filter((item) => !this.brokenSystray.has(item.key))
-            .filter((item) => ("isDisplayed" in item ? item.isDisplayed(this.env) : true))
-            .reverse();
-    }
-
-    /**
-     * A systray component threw while rendering. Drop that one icon, keep the
-     * screen, and let the error reach the handler that reports it.
-     */
-    systrayFailed(error, item) {
-        this.brokenSystray.add(item.key);
-        this.render();
-        Promise.resolve().then(() => {
-            throw error;
-        });
-    }
-
-    /**
      * A new mail is open in the pane. The composer is what says so: Discard
      * closes it without a word to anyone else, so `state.compose` alone
      * outlives the mail it describes.
@@ -2217,6 +2174,14 @@ export class ConversationView extends Component {
         return Boolean(this.state.compose)
             && this.composer.state.open
             && this.composer.state.mode === "new";
+    }
+
+    /**
+     * Any mail or note being written. While one is, its Send is the one
+     * primary button on the screen and New Email steps back to secondary.
+     */
+    get composing() {
+        return Boolean(this.composer.state.open);
     }
 
     get selectedRecord() {

@@ -27,6 +27,7 @@ from odoo.tests import TransactionCase, tagged
 
 from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     ERROR_THROTTLED,
+    ERROR_UNAVAILABLE,
     get_provider_client,
 )
 from .common import registry_test_mode
@@ -559,6 +560,57 @@ class TestGraphFailedSendLeavesNoDraft(TransactionCase):
         self.assertEqual(result['retry_after'], 90)
         delete.assert_called_once()
         self.assertTrue(any('discard draft draft-1' in line for line in logs.output), logs.output)
+
+    def _bad_gateway(self):
+        down = self._response(502, {'error': {'code': 'UnknownError', 'message': ''}})
+        down.raise_for_status.side_effect = requests.exceptions.HTTPError('502', response=down)
+        return down
+
+    def test_an_outage_before_send_can_be_tried_again(self):
+        """13-11-2026: Microsoft answered 502 on the draft POST all morning.
+        Nothing was accepted, so the mail may wait and go again."""
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi</p>', 'email_to': 'to@example.com',
+            'author_id': self.user.partner_id.id,
+        })
+        with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
+                patch(GRAPH_POST, return_value=self._bad_gateway()):
+            result = self.client.send_email_via_graph(mail, self.mailbox, self.account)
+
+        self.assertFalse(result['success'])
+        self.assertEqual(result['error_code'], ERROR_UNAVAILABLE)
+
+    def test_no_connection_before_send_can_be_tried_again(self):
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi</p>', 'email_to': 'to@example.com',
+            'author_id': self.user.partner_id.id,
+        })
+        with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
+                patch(GRAPH_POST, side_effect=requests.exceptions.ConnectionError('gone')):
+            result = self.client.send_email_via_graph(mail, self.mailbox, self.account)
+
+        self.assertEqual(result['error_code'], ERROR_UNAVAILABLE)
+
+    def test_an_outage_on_send_itself_is_not_tried_again(self):
+        """A 502 on `/send` may hide a mail that left: retrying it risks a
+        duplicate to the customer, so it fails as before."""
+        result, _delete = self._send(self._bad_gateway())
+
+        self.assertFalse(result['success'])
+        self.assertNotEqual(result['error_code'], ERROR_UNAVAILABLE)
+
+    def test_a_refusal_before_send_is_not_an_outage(self):
+        refused = self._response(400, {'error': {'code': 'ErrorInvalidRecipients', 'message': 'no'}})
+        refused.raise_for_status.side_effect = requests.exceptions.HTTPError('400', response=refused)
+        mail = self.env['mail.mail'].create({
+            'subject': 'Hello', 'body_html': '<p>Hi</p>', 'email_to': 'to@example.com',
+            'author_id': self.user.partner_id.id,
+        })
+        with patch.object(type(self.client), 'get_valid_token', return_value='t'), \
+                patch(GRAPH_POST, return_value=refused):
+            result = self.client.send_email_via_graph(mail, self.mailbox, self.account)
+
+        self.assertNotEqual(result['error_code'], ERROR_UNAVAILABLE)
 
     def test_a_sent_mail_is_not_deleted(self):
         """Graph moves the draft to Sent Items on send; a DELETE after a

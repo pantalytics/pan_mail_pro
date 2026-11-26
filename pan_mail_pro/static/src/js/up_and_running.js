@@ -9,13 +9,10 @@
  * here rather than in a field, so it is a click and never a change for the
  * settings form to save. The stylesheet hides the steps while it is folded.
  *
- * Beside the invite, Take the tour: the Inbox, starting the tour its "?"
- * starts (#393), through the action's context (`pan_mail_tour`).
- *
  * Confetti once per database: the first page that draws the line asks the
  * server to spend the moment (`celebrate_once`), and only that page
- * celebrates. Under prefers-reduced-motion nothing flies and the rocket
- * stands still; the moment is spent all the same.
+ * celebrates, from the line itself. Under prefers-reduced-motion nothing
+ * flies; the moment is spent all the same.
  */
 
 import { Component, onMounted } from "@odoo/owl";
@@ -77,8 +74,8 @@ export class UpAndRunning extends Component {
         this.props = useProps();
         this.orm = useService("orm");
         this.action = useService("action");
-        this.rocket = useRef("rocket");
-        this.state = useState({ open: false, launch: false });
+        this.line = useRef("line");
+        this.state = useState({ open: false });
         onMounted(() => this.celebrate());
     }
 
@@ -97,12 +94,11 @@ export class UpAndRunning extends Component {
 
     async celebrate() {
         const first = await this.orm.call("pan.mail.setup", "celebrate_once", []);
-        if (!first || stillMotion() || !this.rocket.el) {
+        if (!first || stillMotion() || !this.line.el) {
             return;
         }
-        this.state.launch = true;
-        const box = this.rocket.el.getBoundingClientRect();
-        confetti(box.left + box.width / 2, box.top + box.height / 2, 60, 220);
+        const box = this.line.el.getBoundingClientRect();
+        confetti(box.left + 24, box.top + box.height / 2, 60, 220);
         browser.setTimeout(() => {
             confetti(window.innerWidth * 0.2, 140, 30, 140);
             confetti(window.innerWidth * 0.8, 140, 30, 140);
@@ -112,13 +108,6 @@ export class UpAndRunning extends Component {
     async invite() {
         const action = await this.orm.call("pan.mail.setup", "action_invite_colleagues", []);
         await this.action.doAction(action);
-    }
-
-    /** The Inbox, starting its tour the way its "?" does (#393). */
-    takeTour() {
-        return this.action.doAction("pan_mail_pro.action_pan_mail_conversation", {
-            additionalContext: { pan_mail_tour: true },
-        });
     }
 
     toggle() {

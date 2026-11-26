@@ -78,6 +78,9 @@ class PanMailMailbox(models.Model):
     `_get_client()` rather than being answered here.
     """
     _name = 'pan.mail.mailbox'
+    # The chatter beside the form is the mailbox's history: who changed its
+    # sync level, routing or owner, when a sign-in was made, when it stopped.
+    _inherit = ['mail.thread']
     _description = 'Mailbox'
     _order = 'sequence, email'
     _rec_name = 'email'
@@ -252,6 +255,7 @@ class PanMailMailbox(models.Model):
     is_notification_mailbox = fields.Boolean(
         string='Notification Mailbox',
         default=False,
+        tracking=True,
         help='System emails — user invitations, password resets, activity '
              'reminders — are sent from this mailbox. Exactly one mailbox has '
              'this ticked.',
@@ -260,10 +264,11 @@ class PanMailMailbox(models.Model):
     owner_user_id = fields.Many2one(
         'res.users',
         string='Owner',
+        tracking=True,
         domain="[('x_pan_mail_connected', '=', True)]",
-        help='Their own address makes this their personal mailbox. On any '
-             'other address this is whose credentials read it, where the '
-             'provider needs a person\'s to do so.',
+        help='Owner of their own address: this is their personal mailbox. '
+             'Owner of any other address: their sign-in reads and sends it '
+             '(Microsoft 365). On Google, sign in as the address itself instead.',
         index=True
     )
     owner_is_address = fields.Boolean(
@@ -330,6 +335,7 @@ class PanMailMailbox(models.Model):
             return None
         Access = self.env['pan.mail.mailbox.access']
         Error = self.env['pan.mail.error']
+        run = self.env['pan.mail.sync.run']._start(self, kind='access_check')
         try:
             answer = client.inspect_mailbox(account, self.email)
         except Exception as exception:  # noqa: BLE001 - recorded, the previous answer stands
@@ -337,7 +343,10 @@ class PanMailMailbox(models.Model):
                             self.email, account.email, exception)
             Error._record('access.check_failed', exception, level='warning',
                           mailbox=self, account=account)
+            run._finish(error=exception)
             return None
+        run._finish(error=answer.get('error') if answer['can_read'] == 'no'
+                    or answer['kind'] in ('none', 'resource') else None)
 
         now = fields.Datetime.now()
         vals = {'access_checked_date': now}
@@ -375,6 +384,7 @@ class PanMailMailbox(models.Model):
             serves = (client.resolve_receiving_account(mailbox) == account
                       or account in mailbox.access_ids.mapped('account_id'))
             if serves:
+                mailbox.message_post(body=_('Signed in as %s', account.email))
                 mailbox._verify_access(account)
 
     def _owner_rule_type(self):
@@ -412,7 +422,7 @@ class PanMailMailbox(models.Model):
             else:
                 record.mailbox_type = record._owner_rule_type()
 
-    @api.depends('address_kind', 'owner_user_id',
+    @api.depends('address_kind', 'owner_user_id', 'provider',
                  'owner_user_id.email', 'owner_user_id.login',
                  'owner_user_id.x_pan_mail_account_ids.email', 'email')
     def _compute_provider_type(self):
@@ -427,6 +437,11 @@ class PanMailMailbox(models.Model):
             kind = ADDRESS_KIND_TYPES.get(record.address_kind)
             if not kind and record.address_kind == 'unknown':
                 kind = record._owner_rule_type()
+            if kind == 'personal' and record.signs_in_as_itself:
+                # Google calls every address that signs in as itself a user.
+                # One with no person's sign-in behind it is the company's
+                # (`GoogleGmailClient._service_account`): shared.
+                kind = 'shared'
             record.provider_type = kind or False
 
     # -------------------------------------------------------------------------
@@ -462,17 +477,19 @@ class PanMailMailbox(models.Model):
         ('both', 'Received and sent replies'),
         ('contacts', 'Replies and existing contacts'),
         ('everyone', 'Replies, existing and new contacts'),
-    ], string='Sync level', default='replies', required=True)
+    ], string='Sync Level', default='replies', required=True, tracking=True)
 
     route_to_team = fields.Boolean(
         string='To Team',
         default=False,
+        tracking=True,
         help='Route to a team instead of contact chatter'
     )
 
     # Keep for backwards compatibility / internal use
     sync_start_date = fields.Datetime(
-        string='Start from',
+        string='Import From',
+        tracking=True,
         default=fields.Datetime.now,
         help='Import emails starting from this date. Default is today.'
     )
@@ -511,7 +528,8 @@ class PanMailMailbox(models.Model):
     )
     alias_id = fields.Many2one(
         'mail.alias',
-        string='Route to Team',
+        string='Routing',
+        tracking=True,
         domain="[('alias_name', '!=', False)]",
         help='Select the team where emails should be routed. Teams configure their alias in their own settings (e.g., Sales Team → Alias).'
     )
@@ -520,6 +538,10 @@ class PanMailMailbox(models.Model):
         ('active', 'Active'),
         ('error', 'Error'),
     ], string='Sync Status', default='draft', readonly=True)
+    # The switch on the Sync page. Off is a person's; a sync that failed
+    # SYNC_FAILURE_LIMIT runs in a row turns it off itself (Stopped), and
+    # Run Now or turning it on again resumes it.
+    sync_enabled = fields.Boolean(string='Sync', default=True, tracking=True)
     error_message = fields.Text(
         string='Last Error',
         readonly=True,
@@ -549,13 +571,29 @@ class PanMailMailbox(models.Model):
     # a shared mailbox with a colleague's sign-in, IMAP with a typed password.
     signs_in_as_itself = fields.Boolean(compute='_compute_signs_in_as_itself')
 
-    @api.depends('mailbox_type', 'provider')
+    @api.depends('provider', 'email', 'owner_user_id', 'owner_user_id.email',
+                 'owner_user_id.login', 'owner_user_id.x_pan_mail_account_ids.email')
     def _compute_signs_in_as_itself(self):
+        """A shared address, and any address the owner is signed in to this
+        provider as somebody else, the notification mailbox included: on
+        Gmail a token reaches its own mailbox only. The owner's own address
+        with no sign-in yet is still theirs to connect."""
         for record in self:
             client = record._get_client() if record.provider else None
-            record.signs_in_as_itself = bool(
-                client is not None and record.mailbox_type == 'shared'
-                and client.uses_oauth and not client.supports_shared_mailbox)
+            if client is None or not client.uses_oauth or client.supports_shared_mailbox:
+                record.signs_in_as_itself = False
+                continue
+            signed_in = record._owner_provider_addresses()
+            address = (record.email or '').strip().lower()
+            record.signs_in_as_itself = address not in signed_in and bool(
+                signed_in or record._owner_rule_type() == 'shared')
+
+    def _owner_provider_addresses(self):
+        """The addresses the owner is signed in to this mailbox's provider as."""
+        self.ensure_one()
+        return {(account.email or '').strip().lower()
+                for account in self.owner_user_id.x_pan_mail_account_ids
+                if account.provider == self.provider and account.email}
 
     def action_sign_in_as_address(self):
         """Sign in at the provider as this shared address, for its own account.
@@ -798,9 +836,20 @@ class PanMailMailbox(models.Model):
         self.ensure_one()
         count = (self.sync_failure_count or 0) + 1
         vals = {'sync_failure_count': count, 'error_message': reason}
+        stops = count >= SYNC_FAILURE_LIMIT and self.sync_enabled
         if count >= SYNC_FAILURE_LIMIT:
             vals['state'] = 'error'
+            # Stopped: the cron leaves it alone until a person turns it on
+            # again or presses Run Now, and the chatter says so once.
+            vals['sync_enabled'] = False
         self.write(vals)
+        if stops:
+            self.sudo().message_post(
+                body=_('Sync stopped after %(count)s failed runs in a row: %(reason)s',
+                       count=count, reason=reason),
+                partner_ids=self.owner_user_id.partner_id.ids,
+                subtype_xmlid='mail.mt_comment',
+            )
 
     def _record_sync_success(self):
         """Back to active, counter cleared, and the heartbeat moved.
@@ -813,6 +862,9 @@ class PanMailMailbox(models.Model):
         """
         self.ensure_one()
         vals = {'last_check_date': fields.Datetime.now()}
+        if self.sync_status == 'stopped':
+            # A run that went through (Run Now) resumes a stopped sync.
+            vals['sync_enabled'] = True
         if self.state != 'active':
             vals['state'] = 'active'
         if self.error_message:
@@ -821,6 +873,191 @@ class PanMailMailbox(models.Model):
             vals['sync_failure_count'] = 0
         if vals:
             self.write(vals)
+
+    # -------------------------------------------------------------------------
+    # The mailbox page and its Sync page (the Mail Pro canvas, 04 to 09)
+    # -------------------------------------------------------------------------
+    sync_status = fields.Selection([
+        ('not_checked', 'Not Checked'),
+        ('syncing', 'Syncing'),
+        ('failing', 'Failing'),
+        ('stopped', 'Stopped'),
+        ('off', 'Off'),
+    ], string='Mailbox Status', compute='_compute_sync_status')
+    sign_in_name = fields.Char(string='Sign-In', compute='_compute_sign_in')
+    sign_in_problem = fields.Char(compute='_compute_sign_in')
+    # Whether the Sign-In row offers Sign In: this mailbox lacks a working
+    # sign-in, and Mail Pro knows whose to start for the person looking.
+    can_sign_in = fields.Boolean(compute='_compute_sign_in')
+    issue_count = fields.Integer(string='Issues', compute='_compute_issue_count')
+    issue_text = fields.Char(string='Issue Summary', compute='_compute_issue_count')
+    run_ids = fields.One2many('pan.mail.sync.run', 'mailbox_id', string='Runs')
+    last_run_text = fields.Char(string='Last Run', compute='_compute_runs_rows')
+    # The Sync row of the mailbox page: its value (the last run, or Off), and
+    # a red word next to it when the sync fails or stopped.
+    sync_value = fields.Char(string='Sync Summary', compute='_compute_runs_rows')
+    sync_problem = fields.Char(compute='_compute_runs_rows')
+    next_run = fields.Datetime(string='Next Run', compute='_compute_runs_rows')
+
+    @api.depends('sync_enabled', 'sync_failure_count', 'health_status',
+                 'last_check_date', 'access_checked_date')
+    def _compute_sync_status(self):
+        """One word for the badge, said once. Never Syncing before anything
+        was checked: a mailbox nobody has read yet is Not Checked."""
+        for record in self:
+            if not record.sync_enabled:
+                record.sync_status = 'stopped' \
+                    if record.sync_failure_count >= SYNC_FAILURE_LIMIT else 'off'
+            elif record.health_status == 'error':
+                record.sync_status = 'failing'
+            elif not record.last_check_date and not record.access_checked_date:
+                record.sync_status = 'not_checked'
+            elif record.sync_failure_count or record._sync_is_stale():
+                record.sync_status = 'failing'
+            else:
+                record.sync_status = 'syncing'
+
+    @api.depends('owner_user_id', 'provider', 'email', 'address_kind',
+                 'access_ids.can_read', 'access_ids.account_id')
+    def _compute_sign_in(self):
+        """Who reads this mailbox, and, when it cannot, a problem of one to
+        three words for the Owner row (No Access, Not Signed In)."""
+        for record in self:
+            record.sign_in_name = False
+            record.sign_in_problem = False
+            record.can_sign_in = False
+            if not record.provider or not record.email:
+                continue
+            try:
+                client = record._get_client()
+                account = client.resolve_receiving_account(record)
+            except Exception:  # noqa: BLE001 - a broken provider row says so elsewhere
+                account = self.env['pan.mail.account']
+            who = account and (account.user_id.name or account.email)
+            record.sign_in_name = who or False
+            if record._needs_credentials() and not (account and account.connected):
+                record.sign_in_problem = _('Not Signed In')
+                record.can_sign_in = record.signs_in_as_itself or (
+                    record.owner_user_id == self.env.user
+                    and record.provider != 'imap')
+                continue
+            if record.address_kind in ('none', 'resource'):
+                record.sign_in_problem = _('No Mailbox')
+                continue
+            row = record.access_ids.filtered(lambda r: r.account_id == account)[:1]
+            if row and row.can_read == 'no':
+                record.sign_in_problem = _('No Access')
+
+    def _compute_issue_count(self):
+        counts = {}
+        if self.ids:
+            for mailbox, count in self.env['pan.mail.error'].sudo()._read_group(
+                    [('mailbox_id', 'in', self.ids)], ['mailbox_id'], ['__count']):
+                counts[mailbox.id] = count
+        for record in self:
+            count = counts.get(record.id, 0)
+            record.issue_count = count
+            record.issue_text = _('%s Errors', count) if count > 1 else (
+                _('1 Error') if count else _('None'))
+
+    def _compute_runs_rows(self):
+        Run = self.env['pan.mail.sync.run'].sudo()
+        cron = self.env.ref('pan_mail_pro.ir_cron_pan_mail_fetch_incoming_mail',
+                            raise_if_not_found=False)
+        for record in self:
+            last = Run.search([('mailbox_id', '=', record.id), ('kind', '=', 'incoming'),
+                               ('state', '!=', 'running')], limit=1) if record.id else Run
+            if last:
+                when = fields.Datetime.context_timestamp(record, last.started)
+                if last.state == 'failed':
+                    record.last_run_text = _('%s, failed', when.strftime('%d %b %H:%M'))
+                else:
+                    record.last_run_text = _('%(when)s, %(linked)s linked',
+                                             when=when.strftime('%d %b %H:%M'),
+                                             linked=last.linked_count)
+            else:
+                record.last_run_text = _('No run yet')
+            labels = dict(record._fields['sync_status']._description_selection(self.env))
+            record.sync_value = labels['off'] if record.sync_status == 'off' \
+                else record.last_run_text
+            record.sync_problem = labels[record.sync_status] \
+                if record.sync_status in ('failing', 'stopped') else False
+            record.next_run = cron.sudo().nextcall if cron and cron.sudo().active \
+                and record.sync_enabled else False
+
+    @api.depends('email')
+    @api.depends_context('pan_mail_sync_page')
+    def _compute_display_name(self):
+        """The Sync page and its Sync Level page are levels of their own in
+        the breadcrumb."""
+        page = self.env.context.get('pan_mail_sync_page')
+        name = _('Sync Level') if page == 'level' else _('Sync') if page else False
+        for record in self:
+            record.display_name = name or record.email or ''
+
+    def action_sign_in(self):
+        """The one Sign In on the mailbox page. Mail Pro decides whose
+        sign-in it starts: the address's own where the provider only reaches
+        the signed-in mailbox (Gmail, `signs_in_as_itself`), the owner's
+        otherwise -- which is the person pressing it, or nobody."""
+        self.ensure_one()
+        if self.signs_in_as_itself:
+            return self.action_sign_in_as_address()
+        if self.owner_user_id != self.env.user:
+            raise UserError(_('%s signs in for this mailbox. Ask them to sign in.')
+                            % (self.owner_user_id.name or _('The owner')))
+        return {
+            'type': 'ir.actions.act_url',
+            'url': '/mail_pro/connect?provider=%s' % self.provider,
+            'target': 'self',
+        }
+
+    def action_open_sync(self):
+        """The mailbox's Sync page: the same record, its second form."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Sync'),
+            'res_model': 'pan.mail.mailbox',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('pan_mail_pro.view_pan_mail_mailbox_sync_form').id, 'form')],
+            'target': 'current',
+            'context': {'pan_mail_sync_page': True},
+        }
+
+    def action_open_sync_level(self):
+        """The Sync Level page: the slider and its grid, one level below
+        the Sync page."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'name': _('Sync Level'),
+            'res_model': 'pan.mail.mailbox',
+            'res_id': self.id,
+            'view_mode': 'form',
+            'views': [(self.env.ref('pan_mail_pro.view_pan_mail_mailbox_sync_level_form').id, 'form')],
+            'target': 'current',
+            'context': {'pan_mail_sync_page': 'level'},
+        }
+
+    def action_open_runs(self):
+        """This mailbox's runs, newest first."""
+        self.ensure_one()
+        action = self.env['ir.actions.act_window']._for_xml_id(
+            'pan_mail_pro.action_pan_mail_sync_run')
+        action['domain'] = [('mailbox_id', '=', self.id)]
+        action['context'] = {'pan_mail_sync_page': False}
+        return action
+
+    def action_open_issues(self):
+        """This mailbox's rows in the error ledger."""
+        self.ensure_one()
+        action = self.env['ir.actions.act_window']._for_xml_id(
+            'pan_mail_pro.action_pan_mail_error')
+        action['domain'] = [('mailbox_id', '=', self.id)]
+        action['context'] = {}
+        return action
 
     # -------------------------------------------------------------------------
     # The inspection surface: two counters on the form, no fields to fill in
@@ -880,17 +1117,15 @@ class PanMailMailbox(models.Model):
         client = self._get_client()
         provider = client.provider_label()
 
+        if self.signs_in_as_itself:
+            # Gmail: an address nobody is signed in as is its own account,
+            # the notification mailbox's included, so it is connected by
+            # signing in as the address, on this form.
+            return _(
+                'Sign in to %(provider)s as %(email)s.',
+                email=self.email, provider=provider,
+            )
         if self.mailbox_type == 'shared':
-            if not client.supports_shared_mailbox and client.uses_oauth:
-                # Gmail: a shared address is its own account, so it is
-                # connected by signing in as the address, on this form.
-                return _(
-                    'Shared mailbox "%(email)s" is not signed in yet. On '
-                    '%(provider)s it sends and reads with its own sign-in: press '
-                    'Sign in as this address and sign in to %(provider)s as '
-                    '%(email)s.',
-                    email=self.email, provider=provider,
-                )
             if not client.supports_shared_mailbox:
                 # IMAP: a shared address is its own account, so there is
                 # nothing an owner could connect on its behalf.
@@ -1102,9 +1337,15 @@ class PanMailMailbox(models.Model):
         # fine while the row still says refused would leave the red alert up.
         self._verify_access()
 
-        # Trigger the processor for this mailbox
+        # Trigger the processor for this mailbox, as a run of its own.
         processor = self.env['pan.mail.fetcher']
-        stall = processor._process_mailbox(self)
+        run = self.env['pan.mail.sync.run']._start(self)
+        try:
+            stall = processor.with_context(pan_mail_sync_run_id=run.id)._process_mailbox(self)
+        except Exception as error:
+            run._finish(error=error)
+            raise
+        run._finish(error=stall if stall and not isinstance(stall, ThrottledError) else None)
 
         if isinstance(stall, ThrottledError):
             # The provider asked for a pause mid-batch. What landed is kept,
@@ -1256,6 +1497,14 @@ class PanMailMailbox(models.Model):
     def write(self, vals):
         """Reset both folder cursors when sync_start_date moves earlier, and
         keep exactly one notification mailbox."""
+        if vals.get('sync_enabled') and 'sync_failure_count' not in vals:
+            # Turning a stopped sync on again starts its count afresh, or the
+            # next bad minute would stop it at once.
+            vals = dict(vals, sync_failure_count=0)
+        if 'alias_id' in vals and 'route_to_team' not in vals:
+            # Routing is one field on screen: a team, or nothing (the
+            # sender's contact). `route_to_team` follows it.
+            vals = dict(vals, route_to_team=bool(vals['alias_id']))
         self._check_notification_kept(vals)
         if vals.get('is_notification_mailbox'):
             self._hand_over_notifications()

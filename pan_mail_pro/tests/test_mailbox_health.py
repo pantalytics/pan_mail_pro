@@ -154,7 +154,7 @@ class TestMailboxHealth(MailProTestCase):
                                 'error': None})
         state, sentence = self.Setup.notification_mailbox_verified()
         self.assertEqual(state, 'open')
-        self.assertEqual(sentence, 'Not yet sent from. It turns green after the first email.')
+        self.assertEqual(sentence, 'Not sent from yet')
         self.Access.note_send(self.notification_mailbox, self.owner_account, True)
         self.assertEqual(self.Setup.notification_mailbox_verified(), ('ok', ''))
 
@@ -186,5 +186,5 @@ class TestMailboxHealth(MailProTestCase):
     def test_a_refused_mailbox_is_an_alert_on_the_mailboxes_line(self):
         self.assertEqual(self.Setup.mailbox_alert(), '')
         self.shared_mailbox.sudo().write({'address_kind': 'none'})
-        self.assertIn('1 mailbox(es) the provider refuses', self.Setup.mailbox_alert())
+        self.assertIn('1 refused by the provider', self.Setup.mailbox_alert())
         self.assertTrue(self.Setup.is_ready(), 'an alert, never a phase')

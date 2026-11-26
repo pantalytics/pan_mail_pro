@@ -155,6 +155,9 @@ class ResConfigSettings(models.TransientModel):
     ], compute='_compute_license')
     x_license_status = fields.Selection(
         STATUS_SELECTION, string='Status', compute='_compute_license')
+    # The code expired unapproved: step 1 is back to Connect, with one line
+    # on why (#456).
+    x_license_pairing_expired = fields.Boolean(compute='_compute_license')
     x_license_user_code = fields.Char(string='Code', compute='_compute_license')
     x_license_verify_url = fields.Char(string='Approve at', compute='_compute_license')
     x_license_last_error = fields.Char(compute='_compute_license')
@@ -232,34 +235,6 @@ class ResConfigSettings(models.TransientModel):
         for record in self:
             record.x_is_copy = is_copy
 
-    # -------------------------------------------------------------------------
-    # About
-    # -------------------------------------------------------------------------
-    x_module_version = fields.Char(
-        string='Version',
-        compute='_compute_module_version',
-        help='The version of Mail Pro this Odoo instance is running.',
-    )
-
-    # `depends` on a defaulted field: 18's onchange on a new settings record
-    # only computes what depends on something, 19 computes the rest as well.
-    @api.depends('company_id')
-    def _compute_module_version(self):
-        """The version the database is actually on, not the one in the source.
-
-        `latest_version` is what `ir.module.module` recorded at the last
-        upgrade. On an instance that pulled new code without upgrading, that
-        differs from the manifest on disk -- which Odoo, confusingly, calls
-        `installed_version` -- and the one that explains the behaviour on
-        screen is the database's. It is also the first thing to ask for in a
-        support mail, which is why it is on the page rather than three clicks
-        into Apps.
-        """
-        version = self.env['ir.module.module'].sudo().search(
-            [('name', '=', 'pan_mail_pro')], limit=1).latest_version
-        for record in self:
-            record.x_module_version = version or ''
-
     def get_values(self):
         """Seed the domains tag field from the stored rows.
 
@@ -279,7 +254,8 @@ class ResConfigSettings(models.TransientModel):
     @api.depends('company_id')
     def _compute_license(self):
         link = self.env['pan.mail.license'].current()
-        if not link or link.status == 'not_connected':
+        expired = bool(link) and link.pairing_expired()
+        if not link or link.status == 'not_connected' or expired:
             state = 'not_connected'
         elif link.status == 'pending':
             state = 'pending'
@@ -295,6 +271,7 @@ class ResConfigSettings(models.TransientModel):
             record.x_license_workspace_name = workspace or False
             record.x_license_sync_blocked = blocked
             record.x_license_state = state
+            record.x_license_pairing_expired = expired
             record.x_setup_account_done = state == 'connected' and not blocked
             record.x_license_status = link.status or 'not_connected'
             record.x_license_user_code = link.user_code

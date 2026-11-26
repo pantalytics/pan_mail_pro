@@ -88,11 +88,42 @@ class TestSyncLevelSlider(MailProTestCase):
         arch = self.env[view.model].get_view(view.id)['arch']
         return etree.fromstring(arch).xpath(f'//field[@name="{name}"]')
 
-    def test_the_mailbox_form_draws_the_slider(self):
-        fields = self._field(
-            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_form'), 'sync_level')
-        self.assertTrue(fields)
-        self.assertEqual({f.get('widget') for f in fields}, {'mailpro_sync_level'})
+    def test_the_sync_level_page_draws_the_slider(self):
+        """The Sync page has one Sync Level row; the slider and its grid are
+        a page of their own (Rutger, 2026-11-26), the same widget as My
+        Preferences. The mailbox form has no level."""
+        rows = self._field(
+            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_sync_form'), 'sync_level')
+        self.assertTrue(rows)
+        self.assertEqual({f.get('widget') for f in rows}, {None})
+        self.assertEqual({f.get('readonly') for f in rows}, {'1'})
+        page = self._field(
+            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_sync_level_form'), 'sync_level')
+        self.assertEqual({f.get('widget') for f in page}, {'mailpro_sync_level'})
+        self.assertFalse(self._field(
+            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_form'), 'sync_level'))
+
+    def test_the_sync_level_row_opens_its_page(self):
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'level@example.com', 'provider': 'outlook'})
+        action = mailbox.action_open_sync_level()
+        self.assertEqual(action['res_id'], mailbox.id)
+        self.assertEqual(action['target'], 'current')
+        self.assertEqual(action['views'][0][0], self.env.ref(
+            'pan_mail_pro.view_pan_mail_mailbox_sync_level_form').id)
+        named = mailbox.with_context(**action['context'])
+        self.assertEqual(named.display_name, 'Sync Level')
+        self.assertEqual(mailbox.display_name, 'level@example.com')
+
+    def test_no_everyone_warning(self):
+        """The widest level carries no alert: the grid already says what
+        lands in Odoo."""
+        for xmlid in ('pan_mail_pro.view_pan_mail_mailbox_sync_form',
+                      'pan_mail_pro.view_pan_mail_mailbox_sync_level_form',
+                      'base.view_users_form_simple_modif', 'base.view_users_form'):
+            view = self.env.ref(xmlid)
+            arch = self.env[view.model].get_view(view.id)['arch']
+            self.assertNotIn('newsletters', arch, xmlid)
 
     def test_my_preferences_draws_the_same_slider(self):
         for xmlid in ('base.view_users_form_simple_modif', 'base.view_users_form'):
