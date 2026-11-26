@@ -210,6 +210,8 @@ class TestSyncRun(TransactionCase):
         self.assertIn('can_sign_in', buttons[0].get('invisible'))
         self.assertEqual(len(arch.xpath('//button[contains(@class, "btn-primary")]')), 1)
         self.assertTrue(arch.xpath('//button[@name="action_open_sync"]'))
+        # The status is the Sync page's, said once: no badge here.
+        self.assertFalse(arch.xpath('//field[@name="sync_status"]'))
         for gone in ('action_open_routing_log', 'action_open_issues'):
             self.assertFalse(arch.xpath(f'//button[@name="{gone}"]'), gone)
         self.assertNotIn('as This Address', etree.tostring(arch).decode())

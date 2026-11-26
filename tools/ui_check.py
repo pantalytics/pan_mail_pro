@@ -4651,11 +4651,14 @@ class Checks:
             quiet = marks()
             text = self.form_text(url)
             self.shot('mailbox-healthy.png')
-            # One status, said once, in the header (canvas 04).
-            badge = self.page.query_selector('.o_form_view .o_form_statusbar .o_mailpro_mailbox_status')
-            if not badge or 'Syncing' not in badge.inner_text():
-                self.fail('a mailbox that ran a moment ago does not say Syncing in its header: '
-                          + (badge.inner_text() if badge else 'no badge'))
+            # The status is the sync's, said once on the Sync page; here the
+            # Sync row says it and the header has no badge (canvas 04).
+            if self.page.query_selector('.o_form_view .o_form_statusbar .o_field_badge'):
+                self.fail('the mailbox page says its status in the header too: it is the Sync page\'s')
+            sync_row = self.page.query_selector('.o_form_view .o_mailpro_row_sync')
+            if not sync_row or 'Syncing' not in sync_row.inner_text():
+                self.fail('a mailbox that ran a moment ago does not say Syncing on its Sync row: '
+                          + (sync_row.inner_text() if sync_row else 'no Sync row'))
             if self.page.query_selector('.o_form_view .o_form_statusbar button.btn-primary'):
                 self.fail('the mailbox page has a primary button')
             for gone in ('Sync Now', 'Send test email', 'Try again', 'Check Now',
@@ -4738,15 +4741,11 @@ class Checks:
 
             # Stale: the heartbeat is old enough that nobody is reading this
             # mailbox, with no error recorded anywhere. A missed run is not a
-            # state: the header still says Syncing and the Sync row says it
-            # in red.
+            # state: the Sync row says it in red.
             self.call('pan.mail.mailbox', 'write', [mailbox_id],
                       {'last_check_date': '2020-01-01 00:00:00'})
             self.form_text(url)
             self.shot('mailbox-stale.png')
-            badge = self.page.query_selector('.o_form_view .o_form_statusbar .o_mailpro_mailbox_status')
-            if not badge or 'Syncing' not in badge.inner_text():
-                self.fail('a mailbox that stopped being read does not keep Syncing as its state')
             problem = self.page.query_selector('.o_form_view .o_mailpro_row_sync .o_mailpro_row_problem')
             if not problem or not problem.is_visible():
                 self.fail('the Sync row of a mailbox that stopped being read shows no problem')

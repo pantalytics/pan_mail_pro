@@ -2101,8 +2101,7 @@ is wrong costs a customer an answer. A daily cron drops rows past
 ### `pan.mail.sync.run` and the Sync page — is this mailbox being read?
 
 The mailbox form (canvas 04, 05, redrawn 26 Nov 2026 after Connector Pro's
-connector page) is the address, one status in the header and one card of
-rows, Owner and Sync, with Notification Mailbox under Advanced and the
+connector page) is the address and one card of rows, Owner and Sync, with Notification Mailbox under Advanced and the
 chatter beside it as the mailbox's history (`mail.thread`, tracking on the
 settings a person changes). A row that is right is grey; one that waits on a
 person is red (`sign_in_problem` on Owner, `sync_value` with
@@ -2111,7 +2110,8 @@ button is Sign In in the header, while the sign-in is missing;
 `action_sign_in` picks whose (the address's own on Gmail,
 `signs_in_as_itself`, the owner's otherwise).
 
-The status (`sync_status`) is the sync's own: Not Started until the access
+The status (`sync_status`) is the sync's own, said once on the Sync page
+(the Sync row of the mailbox page reads it): Not Started until the access
 check or a run has spoken, then Syncing; Paused is a person's
 (`action_pause`), Stopped the sync's own after `SYNC_FAILURE_LIMIT` failed
 runs. A failed run is not a state: it is red on the run and counted on the

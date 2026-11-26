@@ -37,8 +37,9 @@
     </record>
 
     <!-- Form View: the mailbox page (the Mail Pro canvas, 04 and 05).
-         Connector Pro's pattern: the address, one status in the header, and
-         one card of rows. A row that is right is grey; one that waits on a
+         Connector Pro's pattern: the address and one card of rows. The status
+         is the sync's and is said once, on the Sync page; here the Sync row
+         says it. A row that is right is grey; one that waits on a
          person is red. The Sync row opens the Sync page, the same record in
          its second form, where the runs are. The only button is Sign In,
          while the sign-in is missing. -->
@@ -51,11 +52,6 @@
                     <field name="can_sign_in" invisible="1"/>
                     <button name="action_sign_in" type="object" string="Sign In"
                             class="btn-primary" invisible="not can_sign_in or not id"/>
-                    <field name="sync_status" widget="badge" class="ms-auto o_mailpro_mailbox_status"
-                           invisible="not id"
-                           decoration-success="sync_status == 'syncing'"
-                           decoration-danger="sync_status == 'stopped'"
-                           decoration-muted="sync_status in ('not_started', 'paused')"/>
                 </header>
                 <sheet>
                     <field name="provider" invisible="1"/>
