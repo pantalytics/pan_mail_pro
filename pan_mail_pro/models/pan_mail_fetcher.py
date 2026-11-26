@@ -24,6 +24,7 @@ from .mail_provider_client import (
 )
 from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_copy
+from .pan_mail_sync_run import RUN_CTX
 
 _logger = logging.getLogger(__name__)
 
@@ -168,8 +169,12 @@ class PanMailFetcher(models.AbstractModel):
         # broken mailbox from being retried every minute is the credentials
         # filter below, not the state: revoked consent and a deleted account
         # both fail `_has_working_credentials()`.
+        # A mailbox whose sync is off -- turned off by a person, or stopped
+        # after SYNC_FAILURE_LIMIT failed runs -- is not read until somebody
+        # turns it on again or presses Run Now.
         mailboxes = self.env['pan.mail.mailbox'].search([
             ('state', 'in', ['active', 'draft', 'error']),
+            ('sync_enabled', '=', True),
         ]).filtered(lambda m: m._has_working_credentials())
 
         # Setup is not a warning, it is a phase: nothing is carried until all
@@ -229,9 +234,14 @@ class PanMailFetcher(models.AbstractModel):
             if mailbox._access_check_due():
                 with self.env.cr.savepoint():
                     mailbox._verify_access()
+            # The run is written outside the savepoint, so a pass that
+            # raised still leaves its row, marked failed.
+            run = self.env['pan.mail.sync.run']._start(mailbox)
             try:
                 with self.env.cr.savepoint():
-                    stall = self._process_mailbox(mailbox)
+                    stall = self.with_context(**{RUN_CTX: run.id})._process_mailbox(mailbox)
+                run._finish(error=stall if stall and not isinstance(stall, ThrottledError)
+                            else None)
                 if isinstance(stall, ThrottledError):
                     # Mid-batch: what landed is kept, the cursor sits on the
                     # last message that did, and the mailbox says why it
@@ -248,11 +258,13 @@ class PanMailFetcher(models.AbstractModel):
                     mailbox._record_sync_success()
             except ThrottledError as e:
                 # The listing itself was refused, before anything landed.
+                run._finish()
                 self._note_throttle(mailbox, e)
             except Exception as e:
                 # Savepoint rolled back: the cursor is usable again, so the
                 # error write below won't hit "current transaction is aborted".
                 _logger.exception(f"[Incoming Mail] Error processing mailbox {mailbox.email}")
+                run._finish(error=e)
                 mailbox._record_sync_failure(str(e))
                 self.env['pan.mail.error']._record(
                     'incoming.mailbox_failed', e, mailbox=mailbox)
@@ -276,6 +288,10 @@ class PanMailFetcher(models.AbstractModel):
         mailbox.write({'error_message': str(error), 'last_check_date': fields.Datetime.now()})
         self.env['pan.mail.error']._record(
             'incoming.throttled', error, level='warning', mailbox=mailbox)
+
+    def _current_run(self):
+        """The sync run this pass writes its counts on, or an empty one."""
+        return self.env['pan.mail.sync.run'].browse(self.env.context.get(RUN_CTX) or [])
 
     def _process_mailbox(self, mailbox):
         """
@@ -478,6 +494,8 @@ class PanMailFetcher(models.AbstractModel):
             since_datetime=self._folder_cursor(mailbox, folder),
             limit=FETCH_BATCH_SIZE,
         )
+        run = self._current_run()
+        run._note_read(len(messages))
         if len(messages) == FETCH_BATCH_SIZE:
             # The batch is full, so there is more waiting behind it. Worth a
             # line: this is what a mailbox catching up on a backlog looks like,
@@ -529,6 +547,7 @@ class PanMailFetcher(models.AbstractModel):
                 )
                 if stalled_on is None:
                     stalled_on = message
+                run._note_error()
                 self.env['pan.mail.error']._record(
                     'incoming.message_failed', error, mailbox=mailbox)
                 continue

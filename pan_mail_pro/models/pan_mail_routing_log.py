@@ -53,6 +53,14 @@ class PanMailRoutingLog(models.Model):
         ondelete='cascade',
         index=True,
     )
+    # The sync run that read this mail, when it came through one: the run's
+    # page lists its mails off this field.
+    run_id = fields.Many2one(
+        'pan.mail.sync.run',
+        string='Run',
+        ondelete='set null',
+        index='btree_not_null',
+    )
     mail_message_id = fields.Many2one(
         'mail.message',
         string='Message',
@@ -232,6 +240,7 @@ class PanMailRoutingLog(models.Model):
         references = match.get('reference_ids') or []
         vals = {
             'mailbox_id': mailbox.id,
+            'run_id': self.env.context.get('pan_mail_sync_run_id') or False,
             'mail_message_id': message.id if message else False,
             'subject': subject,
             'email_from': email_from,

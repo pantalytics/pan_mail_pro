@@ -170,6 +170,19 @@ call('mail.message', 'create', {
 # one click. Two different contacts, because mail on one contact is one
 # conversation however many messages it holds -- and linking the first has to
 # leave a second behind.
+# The runs of that mailbox (its Sync page, canvas 08 and 09): one that read
+# the two mails below, an empty one, a failed one and an access check.
+seed_run = call('pan.mail.sync.run', 'create', {
+    'mailbox_id': ids[2], 'kind': 'incoming', 'started': ago(days=2),
+    'state': 'done', 'took': 3.2, 'read_count': 5, 'linked_count': 2, 'skipped_count': 3})
+for kind, state, minutes, message in (
+        ('incoming', 'done', 2, False),
+        ('incoming', 'failed', 30, '503 Service Unavailable'),
+        ('access_check', 'done', 45, False)):
+    call('pan.mail.sync.run', 'create', {
+        'mailbox_id': ids[2], 'kind': kind, 'state': state, 'took': 0.8,
+        'started': ago(minutes=minutes), 'message': message})
+
 for name, address, subject, body, when in (
     ('Vandermolen Techniek B.V.', 'bart@vandermolen.example',
      'Storing aan de pers, spoed',
@@ -188,7 +201,8 @@ for name, address, subject, body, when in (
         'author_id': sender, 'email_from': address, 'date': when,
         'x_direction': 'incoming', 'x_mailbox_id': ids[2]})
     call('pan.mail.routing.log', 'create', {
-        'mailbox_id': ids[2], 'mail_message_id': fallen_back, 'outcome': 'fallback',
+        'mailbox_id': ids[2], 'run_id': seed_run,
+        'mail_message_id': fallen_back, 'outcome': 'fallback',
         'subject': subject, 'email_from': address,
         'reason': 'No rule reached the routing threshold (1 proposal(s))',
         'rule': False, 'candidate_count': 1,

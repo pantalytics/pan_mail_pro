@@ -436,7 +436,8 @@ class TestTheNudgeAndTheCleanup(TransactionCase):
         self.assertEqual(set(signs), {'Sign in with Microsoft', 'Sign in with Google'})
         for button in signs.values():
             self.assertIn('btn-primary', button.get('class'))
-            self.assertIn("status == 'connected'", button.getparent().get('invisible'))
+            self.assertIn("status == 'connected'", button.get('invisible'))
+            self.assertEqual(button.getparent().tag, 'header', 'in Odoo\'s header')
 
     def test_the_provider_form_holds_the_move(self):
         """The provider form has the move and nothing to choose (#369): no

@@ -37,32 +37,40 @@
                 approval page opens in this tab, and Approve comes back to
                 this screen with the key collected (#380).
             -->
-            <div t-if="!this.state.connected" class="o_mailpro_gate d-flex flex-column align-items-center justify-content-center h-100 text-center">
-                <img src="/pan_mail_pro/static/description/icon.png" alt="" class="o_mailpro_gate_icon"/>
-                <h2 class="o_mailpro_gate_title">Connect this Odoo to Pantalytics</h2>
-                <p class="o_mailpro_gate_text">Mail Pro works on an Odoo instance that is connected to a Pantalytics account. The Inbox opens once it is.</p>
-                <!-- On a copy too (#384): the same button pairs it as
-                     staging, and the approval page asks which production it
-                     is a copy of. The line above already says it is one. -->
-                <button t-if="this.isAdmin" type="button" class="btn btn-primary o_mailpro_gate_connect"
-                        t-att-disabled="this.state.connecting"
-                        t-on-click="this.connectPantalytics">Connect to Pantalytics</button>
-                <p t-else="" class="o_mailpro_gate_text">Ask an administrator to connect it: Settings, Mail Pro.</p>
-                <a class="o_mailpro_gate_back" href="/odoo">Back to Odoo</a>
+            <div t-if="!this.state.connected" class="o_mailpro_gate_screen d-flex flex-column h-100">
+                <div class="o_mailpro_topbar d-flex align-items-center gap-2">
+                    <div class="o_mailpro_topbar_start d-flex align-items-center gap-2">
+                        <span class="o_mailpro_crumb">Inbox</span>
+                        <!-- On a copy too (#384): the same button pairs it as
+                             staging, and the approval page asks which
+                             production it is a copy of. -->
+                        <button t-if="this.isAdmin" type="button" class="btn btn-primary btn-sm o_mailpro_gate_connect"
+                                t-att-disabled="this.state.connecting"
+                                t-on-click="this.connectPantalytics">Connect to Pantalytics</button>
+                    </div>
+                </div>
+                <div class="o_mailpro_gate d-flex flex-column align-items-center justify-content-center flex-grow-1 text-center">
+                    <h2 class="o_mailpro_gate_title">Not connected to Pantalytics</h2>
+                    <p t-if="this.isAdmin" class="o_mailpro_gate_text">Connect this Odoo with the button above.</p>
+                    <p t-else="" class="o_mailpro_gate_text">Ask an administrator to connect it: Settings, Mail Pro.</p>
+                </div>
             </div>
             <!-- No mailbox on the database yet: the way back to the setup
                  checklist, never chatter mail standing in for a mailbox (3
-                 Nov, OdooBot's "Welcome to Odoo!" in #general). Settings,
-                 Mail Pro is the one plan: a mailbox needs the email provider
-                 before it, and the checklist says which step is next (6
-                 Nov). -->
-            <div t-elif="!this.state.hasMailbox" class="o_mailpro_gate o_mailpro_gate_no_mailbox d-flex flex-column align-items-center justify-content-center h-100 text-center">
-                <img src="/pan_mail_pro/static/description/icon.png" alt="" class="o_mailpro_gate_icon"/>
-                <h2 class="o_mailpro_gate_title">No mailbox yet</h2>
-                <button t-if="this.isAdmin" type="button" class="btn btn-primary o_mailpro_gate_connect"
-                        t-on-click="this.openConnectSettings">Finish setup</button>
-                <p t-else="" class="o_mailpro_gate_text">Ask an administrator to add one: Settings, Mail Pro.</p>
-                <a class="o_mailpro_gate_back" href="/odoo">Back to Odoo</a>
+                 Nov, OdooBot's "Welcome to Odoo!" in #general). -->
+            <div t-elif="!this.state.hasMailbox" class="o_mailpro_gate_screen o_mailpro_gate_screen_no_mailbox d-flex flex-column h-100">
+                <div class="o_mailpro_topbar d-flex align-items-center gap-2">
+                    <div class="o_mailpro_topbar_start d-flex align-items-center gap-2">
+                        <span class="o_mailpro_crumb">Inbox</span>
+                        <button t-if="this.isAdmin" type="button" class="btn btn-primary btn-sm o_mailpro_gate_connect"
+                                t-on-click="this.openConnectSettings">Finish Setup</button>
+                    </div>
+                </div>
+                <div class="o_mailpro_gate o_mailpro_gate_no_mailbox d-flex flex-column align-items-center justify-content-center flex-grow-1 text-center">
+                    <h2 class="o_mailpro_gate_title">No mailbox yet</h2>
+                    <p t-if="this.isAdmin" class="o_mailpro_gate_text">Finish the setup with the button above.</p>
+                    <p t-else="" class="o_mailpro_gate_text">Ask an administrator to add one: Settings, Mail Pro.</p>
+                </div>
             </div>
             <t t-else="">
 
@@ -87,19 +95,11 @@
             <div class="o_mailpro_topbar d-flex align-items-center gap-2"
                  t-att-inert="this.panes.drawerOpen()">
                 <div class="o_mailpro_topbar_start d-flex align-items-center gap-2">
-                    <!--
-                        The way back. This action is `fullscreen`, so the web
-                        client's own navbar is not drawn above this bar and
-                        this is the only door out of the Inbox. It is the
-                        module's icon, top left, which is where every mail
-                        client keeps the way home, and it goes to `/odoo`
-                        rather than to an action so it works the same on
-                        community and Enterprise.
-                    -->
-                    <a class="o_mailpro_home flex-shrink-0" href="/odoo"
-                       aria-label="Back to Odoo" title="Back to Odoo">
-                        <img src="/pan_mail_pro/static/description/icon.png" alt=""/>
-                    </a>
+                    <!-- Where you are, the way Odoo's control panel says it.
+                         The navbar above is Odoo's own: the action is
+                         `current`, so the way back and the systray are
+                         where they are on every other screen. -->
+                    <span class="o_mailpro_crumb">Inbox</span>
                     <!--
                         The mailboxes: showing or not, pressed while showing.
                         Top left, where every mail client has kept them since
@@ -133,11 +133,11 @@
                         other thing this screen is opened with. Every mail
                         client on a phone draws compose as an icon.
                     -->
-                    <button type="button" class="btn btn-primary btn-sm o_mailpro_new"
-                            aria-label="New email" title="New email"
+                    <button type="button" t-attf-class="btn btn-sm o_mailpro_new {{ this.composing ? 'btn-secondary' : 'btn-primary' }}"
+                            aria-label="New Email" title="New Email"
                             t-on-click="() => this.newEmail()">
                         <i class="fa fa-pencil-square-o" aria-hidden="true"/>
-                        <span class="o_mailpro_new_label ms-1">New email</span>
+                        <span class="o_mailpro_new_label ms-1">New Email</span>
                     </button>
                 </div>
                 <div class="o_mailpro_search_zone flex-grow-1 d-flex justify-content-center">
@@ -172,38 +172,9 @@
                         <i class="fa fa-question" aria-hidden="true"/>
                     </button>
                 </div>
-                <!--
-                    The systray: the activity and message counters, the
-                    company, the user menu. Odoo's own components out of its
-                    own registry, drawn in the same order the navbar draws
-                    them, because a bar that replaces the navbar has to carry
-                    what the navbar carried. Each one is wrapped the way the
-                    navbar wraps it: a systray item that throws is one icon
-                    missing, never the Inbox gone.
-
-                    The `o_main_navbar` class is not decoration: every rule
-                    web's own scss writes for a systray item is nested under
-                    it, so an item outside that class is an unstyled one. The
-                    scss gives back what the navbar sets for itself.
-
-                    A phone leaves them out: there is room for the mail or
-                    for the chrome, and the way to all of it is the icon on
-                    the left. It is a `t-if` and not a `display: none`,
-                    because the zone wears `o_main_navbar` to borrow web's
-                    styling and a theme is free to write
-                    `.o_main_navbar { display: flex !important }`. Ours does,
-                    and the phone kept a systray no rule of ours could hide.
-                    A row that is not rendered cannot be un-hidden.
-                -->
-                <div t-if="!this.panes.state.small" class="o_mailpro_topbar_end o_main_navbar">
-                    <div class="o_menu_systray d-flex align-items-center" role="menu">
-                        <t t-foreach="this.systrayItems" t-as="item" t-key="item.key">
-                            <ErrorHandler onError="(error) => this.systrayFailed(error, item)">
-                                <t t-component="item.Component" t-props="item.props"/>
-                            </ErrorHandler>
-                        </t>
-                    </div>
-                </div>
+                <!-- The other end, empty: it keeps the search centred in
+                     the window. The systray is in Odoo's navbar above. -->
+                <div t-if="!this.panes.state.small" class="o_mailpro_topbar_end"/>
             </div>
 
             <!--
@@ -640,7 +611,7 @@
                                     <!-- tabindex -1: where the keyboard is
                                          put when Send, Discard or Save
                                          draft leaves with the composer. -->
-                                    <h2 class="o_mailpro_conversation_title" tabindex="-1">New email</h2>
+                                    <h2 class="o_mailpro_conversation_title" tabindex="-1">New Email</h2>
                                     <div class="o_mailpro_conversation_sub">
                                         <span t-esc="this.state.compose and this.state.compose.label"/>
                                     </div>
@@ -648,7 +619,7 @@
                                 <t t-call="pan_mail_pro.ComposerButtons"/>
                             </div>
                         </div>
-                        <div class="o_mailpro_composer" role="region" aria-label="New email"
+                        <div class="o_mailpro_composer" role="region" aria-label="New Email"
                              t-att-aria-busy="this.composer.state.sending ? 'true' : undefined">
                             <ComposerForm t-props="this.composer.formProps"/>
                         </div>
@@ -696,7 +667,7 @@
                                         </button>
                                         <t t-call="pan_mail_pro.LiveMarks"/>
                                     </div>
-                                    <button type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
+                                    <button type="button" t-attf-class="btn btn-sm o_mailpro_primary_action {{ this.panes.state.small ? 'btn-primary' : 'btn-secondary' }}"
                                             t-att-disabled="this.state.liveBusy"
                                             t-on-click="() => this.importLive()">Add to Odoo</button>
                                 </div>
@@ -732,7 +703,7 @@
                                             All mailboxes it answers "who is
                                             about to reply".
                                         -->
-                                        <span t-if="this.state.selected.mailbox">
+                                        <span t-if="this.state.selected.mailbox and !this.panes.state.small">
                                             &#183; <t t-esc="this.state.selected.mailbox"/>
                                         </span>
                                         <span t-if="this.state.conversation.messages.length > 1">
@@ -779,9 +750,9 @@
                                          the bottom of the screen, where a
                                          thumb is; the head keeps the
                                          subject and the way to the record. -->
-                                    <button t-if="this.canLogNote" type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
+                                    <button t-if="this.canLogNote" type="button" t-attf-class="btn btn-sm o_mailpro_primary_action {{ this.panes.state.small ? 'btn-primary' : 'btn-secondary' }}"
                                             t-on-click="() => this.logNote()">Log note</button>
-                                    <button t-if="this.canReply" type="button" class="btn btn-primary btn-sm o_mailpro_primary_action"
+                                    <button t-if="this.canReply" type="button" t-attf-class="btn btn-sm o_mailpro_primary_action {{ this.panes.state.small ? 'btn-primary' : 'btn-secondary' }}"
                                             t-on-click="() => this.reply()">Reply</button>
                                 </div>
                                     <!--
@@ -1485,28 +1456,7 @@
 
     <t t-name="pan_mail_pro.ComposerButtons">
         <div class="d-flex align-items-center gap-2 flex-shrink-0">
-            <!--
-                The two ways out, and the button says which one this is. On a
-                stored draft it is Close and it keeps the edits, the same as
-                clicking another conversation does. Otherwise it is Discard,
-                and Discard still throws the answer away: somebody saying so
-                is the one case where losing it is the point.
-            -->
-            <button type="button" class="btn btn-link btn-sm"
-                    t-on-click="() => this.discardComposer()">
-                <t t-if="this.composer.state.draftId">Close</t>
-                <t t-else="">Discard</t>
-            </button>
-            <!--
-                Put it away instead of sending it. Not on a note: a note is
-                two lines to the followers, written in one sitting, and a
-                Drafts folder filling up with half-written notes is a second
-                inbox for something that was never mail.
-            -->
-            <button t-if="this.canSaveDraft" type="button" class="btn btn-secondary btn-sm"
-                    t-att-class="{ disabled: this.composer.state.saving or this.composer.state.sending }"
-                    t-att-aria-disabled="this.composer.state.saving or this.composer.state.sending ? 'true' : undefined"
-                    t-on-click="() => this.composer.saveDraft()">Save draft</button>
+            <!-- Odoo's order: the primary first, the way out last. -->
             <!--
                 While it goes out the button says so. A disabled button
                 alone is a screen that went quiet for the length of a
@@ -1529,6 +1479,28 @@
                 </t>
                 <t t-elif="this.composer.state.mode === 'note'">Log</t>
                 <t t-else="">Send</t>
+            </button>
+            <!--
+                Put it away instead of sending it. Not on a note: a note is
+                two lines to the followers, written in one sitting, and a
+                Drafts folder filling up with half-written notes is a second
+                inbox for something that was never mail.
+            -->
+            <button t-if="this.canSaveDraft" type="button" class="btn btn-secondary btn-sm"
+                    t-att-class="{ disabled: this.composer.state.saving or this.composer.state.sending }"
+                    t-att-aria-disabled="this.composer.state.saving or this.composer.state.sending ? 'true' : undefined"
+                    t-on-click="() => this.composer.saveDraft()">Save Draft</button>
+            <!--
+                The two ways out, and the button says which one this is. On a
+                stored draft it is Close and it keeps the edits, the same as
+                clicking another conversation does. Otherwise it is Discard,
+                and Discard still throws the answer away: somebody saying so
+                is the one case where losing it is the point.
+            -->
+            <button type="button" class="btn btn-link btn-sm"
+                    t-on-click="() => this.discardComposer()">
+                <t t-if="this.composer.state.draftId">Close</t>
+                <t t-else="">Discard</t>
             </button>
         </div>
     </t>
