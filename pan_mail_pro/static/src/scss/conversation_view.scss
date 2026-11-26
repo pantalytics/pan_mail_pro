@@ -133,16 +133,11 @@ $mailpro-band-gutter: 3.5rem;
     color: $mailpro-ink;
     overflow: hidden;
 
-    // Not connected: the whole screen is one card, centred, in the width a
-    // sentence reads at. The button is the only accent on it.
+    // Not connected or no mailbox yet: the bar with its one button, and
+    // one line in the middle of the screen saying why.
     .o_mailpro_gate {
         padding: 2rem 1.25rem;
-        gap: 0.75rem;
-    }
-    .o_mailpro_gate_icon {
-        width: 3rem;
-        height: 3rem;
-        margin-bottom: 0.5rem;
+        gap: 0.5rem;
     }
     .o_mailpro_gate_title {
         font-size: 1.25rem;
@@ -154,12 +149,12 @@ $mailpro-band-gutter: 3.5rem;
         margin: 0;
         color: $mailpro-ink-soft;
     }
-    .o_mailpro_gate_connect {
-        margin-top: 0.5rem;
-    }
-    .o_mailpro_gate_back {
-        margin-top: 1rem;
-        color: $mailpro-ink-soft;
+
+    // Where you are, sized the way Odoo's control panel draws its last
+    // breadcrumb.
+    .o_mailpro_crumb {
+        font-size: 1.25rem;
+        white-space: nowrap;
     }
 
     .o_mailpro_topbar {
@@ -186,53 +181,6 @@ $mailpro-band-gutter: 3.5rem;
         flex: 0 1 34rem;
         align-items: center;
         gap: 0.25rem;
-    }
-
-    // The systray is Odoo's own, and so is everything that styles it: web's
-    // scss nests every one of those rules under `.o_main_navbar`, so the zone
-    // wears that class to get them. What it gives back is the four things the
-    // navbar sets for itself as a bar, because here it is not the bar.
-    // The layout is here rather than on the tag: Bootstrap's `d-flex` carries
-    // `!important`, so a bar that wore it could not be hidden on a phone by
-    // any rule at all. Every display in this block is plain CSS for that
-    // reason.
-    // What it gives back is `!important` because what it is giving back is
-    // `!important`: a theme paints the navbar as a bar -- its height, its
-    // padding, its border and its shadow -- and every one of those lands on
-    // this zone the moment it wears the class. Ours is a zone inside a bar,
-    // 52px tall, with the bar's own border under it; without these it is a
-    // second bar drawn inside the first, four pixels taller than the one it
-    // sits in.
-    .o_mailpro_topbar_end.o_main_navbar {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        height: auto !important;
-        min-height: 0 !important;
-        padding: 0 !important;
-        border-bottom: 0 !important;
-        box-shadow: none !important;
-        background: transparent !important;
-    }
-
-    // The way out, and the only one: this action is fullscreen, so there is no
-    // navbar over this screen to go back through. An icon rather than a label,
-    // top left, the size of the avatar at the other end of the bar.
-    .o_mailpro_home {
-        display: flex;
-        align-items: center;
-        opacity: 0.9;
-
-        &:hover, &:focus-visible {
-            opacity: 1;
-        }
-
-        img {
-            display: block;
-            width: 1.5rem;
-            height: 1.5rem;
-            border-radius: 0.25rem;
-        }
     }
 
     .o_mailpro_new {
@@ -1888,37 +1836,12 @@ $mailpro-band-gutter: 3.5rem;
             transition: none;
         }
 
-        // The head's buttons are the bar at the bottom of the phone, where a
-        // thumb is, at the size a phone mail app draws them: 44px targets,
-        // the quiet ones together in one pill on the left, the one action
-        // the screen is for on its own on the right. Still the head's markup,
-        // so everything that finds a button there still does; the phone only
-        // draws the row elsewhere. The pane is the box it sits in, so it
-        // follows the pane when a finger moves it.
-        .o_mailpro_conversation { position: relative; }
-
-        .o_mailpro_actions {
-            position: absolute;
-            left: 1rem;
-            right: 1rem;
-            bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-            z-index: 2;
-            justify-content: space-between;
-            // The gap between the two halves is the mail, and stays readable
-            // and tappable.
-            pointer-events: none;
-
-            > * { pointer-events: auto; }
-        }
-
+        // The head's buttons stay in the head, at the top, at a finger's
+        // 44px: Reply is the one primary there, the way Odoo shows the first
+        // header button on a phone. No floating buttons over the mail.
         .o_mailpro_actions_icons {
             gap: 0.25rem !important;
-            padding: 0.25rem;
-            border-radius: 999px;
-            background: rgba($mailpro-surface, 0.94);
-            box-shadow: 0 0.25rem 1rem rgba($mailpro-shadow, 0.18);
 
-            // Empty on a mail with nothing quiet to offer: no pill at all.
             &:empty { display: none !important; }
 
             .btn {
@@ -1927,17 +1850,23 @@ $mailpro-band-gutter: 3.5rem;
                 height: 2.75rem;
                 align-items: center;
                 justify-content: center;
-                border-radius: 50%;
                 font-size: 1.25rem;
             }
         }
 
         .o_mailpro_primary_action {
-            height: 3.25rem;
-            padding: 0 1.5rem;
-            border-radius: 999px;
-            font-size: 1rem;
-            box-shadow: 0 0.25rem 1rem rgba($mailpro-shadow, 0.22);
+            height: 2.75rem;
+            padding: 0 1.25rem;
+        }
+
+        // The subject keeps the whole first line; the buttons go on the line
+        // under it, Reply first, so neither squeezes the other.
+        .o_mailpro_conversation_head > .d-flex { flex-wrap: wrap; }
+        .o_mailpro_conversation_head .o_mailpro_actions {
+            order: 3;
+            flex-basis: 100%;
+            flex-direction: row-reverse;
+            justify-content: flex-end;
         }
 
         // The two at the top, the way back and the way to the record, at the

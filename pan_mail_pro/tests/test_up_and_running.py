@@ -98,7 +98,7 @@ class TestUpAndRunning(MailProTestCase):
             self.assertIn(f"x_{step}_dot != 'ok'", arch)
         self.assertNotIn('x_notification_access_state != \'ok\'', arch)
         self.assertIn('name="mailpro_up_and_running"', arch)
-        for name in ('4. Mailboxes', '5. Notification mailbox'):
+        for name in ('>Mailboxes<', '>Notification Mailbox<'):
             self.assertIn(name, arch)
 
     # ------------------------------------------------------- the end of the line

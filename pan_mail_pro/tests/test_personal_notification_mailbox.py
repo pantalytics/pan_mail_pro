@@ -40,7 +40,7 @@ class TestPersonalNotificationMailbox(MailProTestCase):
 
     def test_the_form_shows_its_sync_level(self):
         arch = self.env['pan.mail.mailbox'].get_view(
-            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_form').id, 'form')['arch']
+            self.env.ref('pan_mail_pro.view_pan_mail_mailbox_sync_form').id, 'form')['arch']
         field, = etree.fromstring(arch).xpath("//field[@name='sync_level']")
         self.assertNotIn('is_notification_mailbox', field.get('invisible') or '')
 
@@ -71,15 +71,14 @@ class TestPersonalNotificationMailbox(MailProTestCase):
     def test_the_step_5_row_says_so_in_one_line(self):
         arch = self.env['res.config.settings'].get_view(
             self.env.ref('pan_mail_pro.res_config_settings_view_form').id, 'form')['arch']
-        self.assertIn('System email from a personal mailbox', arch)
+        self.assertIn('Personal mailbox', arch)
         self.assertIn("x_notification_mailbox_type != 'personal'", arch)
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
 class TestMailboxFormOnePage(MailProTestCase):
-    """The mailbox form is one page (#420): no tabs, no setup steps, no
-    button that asks the reader to check anything, and no owner on a
-    personal mailbox."""
+    """The mailbox form is one page (#420): no tabs, no setup steps, and
+    the owner of a personal mailbox read, not picked (canvas 04)."""
 
     def arch(self):
         return etree.fromstring(self.env['pan.mail.mailbox'].get_view(
@@ -92,9 +91,9 @@ class TestMailboxFormOnePage(MailProTestCase):
         self.assertFalse(arch.xpath("//*[contains(@class, 'o_mailpro_step')]"))
         self.assertNotIn('Not tested', etree.tostring(arch, encoding='unicode'))
 
-    def test_the_owner_is_one_plain_field_hidden_by_the_owner_rule(self):
+    def test_the_owner_is_one_plain_field_read_only_by_the_owner_rule(self):
         owner, = self.arch().xpath("//field[@name='owner_user_id']")
-        self.assertEqual(owner.get('invisible'), 'owner_is_address and id')
+        self.assertEqual(owner.get('readonly'), 'owner_is_address and id')
         self.assertFalse(owner.get('groups'), 'no developer-mode copy')
         self.assertEqual(owner.get('required'), 'is_notification_mailbox')
 
