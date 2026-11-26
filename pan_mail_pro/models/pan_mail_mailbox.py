@@ -945,6 +945,8 @@ class PanMailMailbox(models.Model):
             if row and row.can_read == 'no':
                 record.sign_in_problem = _('No Access')
 
+    @api.depends('sync_status', 'sync_failure_count', 'error_message', 'state',
+                 'last_check_date', 'sign_in_problem', 'run_ids.state')
     def _compute_runs_rows(self):
         Run = self.env['pan.mail.sync.run'].sudo()
         cron = self.env.ref('pan_mail_pro.ir_cron_pan_mail_fetch_incoming_mail',
@@ -969,13 +971,21 @@ class PanMailMailbox(models.Model):
             else:
                 runs = _('Last run %s', at(record, last.started))
             record.runs_value = runs
-            record.sync_attention = bool(failed) or stale or status == 'stopped'
+            # The cron refuses a mailbox it cannot read (setup not finished,
+            # not connected) with `state = 'error'` and a reason, without a
+            # failed run: red too, with that reason.
+            refused = record.state == 'error' and status == 'syncing' and record.error_message
+            reason = (record.error_message or '').splitlines()[0] if refused else ''
+            record.sync_attention = bool(failed) or stale or bool(refused) \
+                or status == 'stopped'
             if status == 'stopped':
                 record.sync_value = _('Stopped after %s failed runs', failed)
             elif status == 'paused':
                 record.sync_value = _('Paused')
             elif status == 'not_started':
                 record.sync_value = _('Not Started')
+            elif refused:
+                record.sync_value = reason
             elif stale:
                 record.sync_value = _('No run since %s', at(record, record.last_check_date))
             else:
@@ -984,15 +994,21 @@ class PanMailMailbox(models.Model):
             if status == 'stopped':
                 record.sync_note = _('Stopped after %(count)s failed runs: %(reason)s',
                                      count=failed, reason=record.error_message or _('no reason given'))
-            elif status == 'not_started' and record.sign_in_problem:
+            elif refused:
+                record.sync_note = reason
+            elif status == 'not_started' and record.sign_in_problem == _('Not Signed In'):
                 record.sync_note = _('Starts once the mailbox is signed in.')
+            elif status == 'not_started' and record.sign_in_problem:
+                problem = record._access_problem()
+                record.sync_note = problem[1] if problem else record.sign_in_problem
             else:
                 record.sync_note = False
 
     def action_pause(self):
-        """Pause: the cron leaves the mailbox alone until Resume."""
+        """Pause: the cron leaves the mailbox alone until Resume. The failed
+        runs stay counted, so a pause does not hide them."""
         self._check_manager()
-        self.with_context(mail_notrack=True).write({'sync_enabled': False, 'sync_failure_count': 0})
+        self.with_context(mail_notrack=True).write({'sync_enabled': False})
         for record in self:
             record.message_post(body=_('Sync paused.'))
 

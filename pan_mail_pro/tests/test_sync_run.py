@@ -116,6 +116,7 @@ class TestSyncRun(TransactionCase):
         self.mailbox.action_pause()
         self.assertFalse(self.mailbox.sync_enabled)
         self.assertEqual(self.mailbox.sync_status, 'paused')
+        self.assertEqual(self.mailbox.sync_failure_count, 2, 'a pause hides no failed run')
         self.mailbox.action_resume()
         self.assertTrue(self.mailbox.sync_enabled)
         self.assertEqual(self.mailbox.sync_failure_count, 0)
@@ -126,6 +127,7 @@ class TestSyncRun(TransactionCase):
 
     def test_resume_starts_a_stopped_sync(self):
         self.mailbox.write({'sync_enabled': False,
+                            'last_check_date': fields.Datetime.now(),
                             'sync_failure_count': SYNC_FAILURE_LIMIT,
                             'error_message': '503 Service Unavailable'})
         self.assertEqual(self.mailbox.sync_status, 'stopped')
@@ -134,6 +136,16 @@ class TestSyncRun(TransactionCase):
         self.mailbox.action_resume()
         self.assertTrue(self.mailbox.sync_enabled)
         self.assertFalse(self.mailbox.sync_note)
+
+    def test_a_mailbox_the_cron_refuses_is_red_with_the_reason(self):
+        """Setup not finished or not connected: no failed run, but the cron
+        reads nothing, so the row is red with the cron's reason."""
+        self.mailbox.write({'last_check_date': fields.Datetime.now(), 'state': 'error',
+                            'error_message': 'Mail Pro is not set up yet.'})
+        self.assertEqual(self.mailbox.sync_status, 'syncing')
+        self.assertTrue(self.mailbox.sync_attention)
+        self.assertEqual(self.mailbox.sync_value, 'Mail Pro is not set up yet.')
+        self.assertEqual(self.mailbox.sync_note, 'Mail Pro is not set up yet.')
 
     def test_a_failed_run_is_not_a_state(self):
         """A failed run is red on the rows, the status stays Syncing."""

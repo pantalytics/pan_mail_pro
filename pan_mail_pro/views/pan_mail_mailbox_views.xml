@@ -72,14 +72,7 @@
                         </h1>
                     </div>
 
-                    <!-- A new mailbox: what it needs before it can be saved. -->
-                    <group invisible="id">
-                        <field name="owner_user_id" string="Owner"
-                               required="is_notification_mailbox"/>
-                        <field name="is_notification_mailbox" string="Notification Mailbox"/>
-                    </group>
-
-                    <div class="list-group o_mailpro_rows" invisible="not id">
+                    <div class="list-group o_mailpro_rows">
                         <!-- On a personal mailbox whoever connected it owns
                              it, so the owner is read, not picked. -->
                         <div class="list-group-item d-flex align-items-center gap-3 o_mailpro_row_owner">
@@ -96,7 +89,7 @@
                                     string="Edit Server Login" class="btn-link btn-sm p-0"
                                     invisible="provider != 'imap'"/>
                         </div>
-                        <button name="action_open_sync" type="object"
+                        <button name="action_open_sync" type="object" invisible="not id"
                                 class="list-group-item list-group-item-action d-flex align-items-center gap-3 o_mailpro_row_sync">
                             <span class="flex-grow-1 text-start">Sync</span>
                             <field name="sync_value" class="w-auto text-muted" invisible="sync_attention"/>
@@ -109,8 +102,8 @@
                         </button>
                     </div>
 
-                    <div class="o_mailpro_rows_title" invisible="not id">Advanced</div>
-                    <div class="list-group o_mailpro_rows" invisible="not id">
+                    <div class="o_mailpro_rows_title">Advanced</div>
+                    <div class="list-group o_mailpro_rows">
                         <div class="list-group-item d-flex align-items-center gap-3">
                             <span class="flex-grow-1">Notification Mailbox</span>
                             <field name="is_notification_mailbox" widget="boolean_toggle"
@@ -158,9 +151,9 @@
         <field name="arch" type="xml">
             <form string="Sync" class="o_mailpro_mailbox_form o_mailpro_mailbox_sync" create="false" delete="false">
                 <header>
-                    <button name="action_pause" type="object" string="Pause"
+                    <button name="action_pause" type="object" string="Pause" groups="pan_mail_pro.group_mail_mailbox_manager"
                             invisible="sync_status != 'syncing'"/>
-                    <button name="action_resume" type="object" string="Resume" class="btn-primary"
+                    <button name="action_resume" type="object" string="Resume" class="btn-primary" groups="pan_mail_pro.group_mail_mailbox_manager"
                             invisible="sync_status not in ('paused', 'stopped')"/>
                     <field name="sync_status" widget="statusbar" statusbar_visible="not_started,syncing"/>
                 </header>
@@ -209,16 +202,16 @@
                             <button name="action_open_runs" type="object"
                                     class="btn btn-link flex-grow-1 d-flex align-items-center gap-3 p-0 text-reset text-decoration-none">
                                 <span class="flex-grow-1 text-start">Runs</span>
-                                <field name="runs_value" class="w-auto text-muted" invisible="sync_failure_count"/>
+                                <field name="runs_value" class="w-auto text-muted" invisible="sync_attention"/>
                                 <field name="runs_value" class="w-auto text-danger o_mailpro_row_problem"
-                                       invisible="not sync_failure_count"/>
+                                       invisible="not sync_attention"/>
                                 <span class="badge rounded-pill text-bg-danger" invisible="not sync_failure_count">
                                     <field name="sync_failure_count"/>
                                 </span>
                             </button>
                             <button name="action_sync_now" type="object" string="Run Now"
-                                    class="btn-secondary btn-sm text-nowrap"
-                                    invisible="sync_status != 'syncing'"/>
+                                    class="btn-secondary btn-sm text-nowrap" groups="pan_mail_pro.group_mail_mailbox_manager"
+                                    invisible="sync_status == 'paused'"/>
                             <button name="action_open_runs" type="object" class="btn btn-link p-0"
                                     aria-label="Open Runs">
                                 <i class="fa fa-chevron-right text-muted o_mailpro_chevron" title="Open"/>
