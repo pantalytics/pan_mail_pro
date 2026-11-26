@@ -47,6 +47,15 @@ PY
 # stands in for the checkout from here on. The loader refuses a manifest of
 # another series, so there is no measuring 20 on a 19 tree as it stands.
 CUT_TREE=
+# Only main is cut. A checkout whose own series has an overlay in
+# tools/series/ is a series branch already, and cutting it again measures
+# nothing (#449): the 20.0 tree cut for 18.0 fails on ir.access. Decided on
+# the tree, not the branch name, which reads `<n>/merge` on a pull request and
+# `claude/port-...` on a push.
+if [ -n "$WANT_SERIES" ] && [ "$WANT_SERIES" != "$SERIES" ] && [ -d "$REPO/tools/series/$SERIES" ]; then
+    echo "This checkout is the ${SERIES} series branch; the ${WANT_SERIES} run is main's. Nothing to measure."
+    exit 0
+fi
 if [ -n "$WANT_SERIES" ] && [ "$WANT_SERIES" != "$SERIES" ]; then
     if [ "$MODE" = "upgrade" ]; then
         echo "--series= with --mode=upgrade: no v${WANT_SERIES}.* release was cut from this tree; nothing to upgrade from." >&2

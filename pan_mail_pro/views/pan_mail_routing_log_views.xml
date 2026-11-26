@@ -134,15 +134,7 @@
         <field name="res_model">pan.mail.routing.log</field>
         <field name="view_mode">list,form</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">
-                No mail routed yet
-            </p>
-            <p>
-                Every incoming email that Mail Pro delivers is recorded here:
-                where it landed, which rule decided that, and what the other
-                candidates were. Use the "Needs Review" filter to see only the
-                mail that had nowhere obvious to go.
-            </p>
+            <p>No mail routed yet</p>
         </field>
     </record>
 

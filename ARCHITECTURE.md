@@ -477,7 +477,8 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 
 | Model | Purpose |
 |-------|---------|
-| `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates |
+| `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates, and the run that read it |
+| `pan.mail.sync.run` | One pass of the sync over one mailbox (the fetch cron, Run Now, the access check): how much it read, linked, left out and failed. The mailbox's Sync page lists them as Runs; a run's mails are the routing log rows with its `run_id`. A day for an empty run, thirty for the rest |
 | `pan.mail.coverage` | Transient report: how much mail actually lands on a document |
 | `pan.mail.error` | One row per failure the module caught: a code from a fixed list, the flow, the mailbox, the exception and its traceback. Written on its own cursor so a rolled-back transaction keeps its row; thirty days. The codes of the last 24 hours ride the heartbeat (§7, §9.17) |
 
@@ -1021,6 +1022,13 @@ account chooser, and the callback stores the tokens on the account with no
 user only when Google names exactly the mailbox's address. Before that the
 only round stored a sign-in on the person who pressed it, so the guide's "sign
 in as sales@" could not be done without disconnecting yourself first.
+On Gmail a token reaches `users/me` and nothing else, so the owner's sign-in
+serves a mailbox only when it is signed in as that address
+(`GoogleGmailClient.resolve_receiving_account`, 19.0.40.2.2). Every other
+address, the notification mailbox included, is its own service account, and
+the screens call it shared: Google types it a `user`, but no person's sign-in
+is behind it. Lending the owner's token read the owner's inbox under the other
+address's name and sent as the owner (Dorset, 19 Nov 2026).
 
 ### Module structure
 
@@ -2089,6 +2097,38 @@ Deliberately a record of what happened, **not** a queue that holds mail back.
 Delivery is unchanged. A log that is wrong costs a confusing row; a queue that
 is wrong costs a customer an answer. A daily cron drops rows past
 `pan_mail_pro.routing_log_retention_days` (default 90) unless still flagged.
+
+### `pan.mail.sync.run` and the Sync page — is this mailbox being read?
+
+The mailbox form (canvas 04, 05) is a title, one status and rows: Type,
+Notification Mailbox, Owner, Sync, Issues, with the chatter beside it as the
+mailbox's history (`mail.thread`, tracking on the settings a person
+changes). The status (`sync_status`) is said once, in the header: Not
+Checked until the access check or a run has spoken, then Syncing, Failing,
+Stopped or Off; never a green word before anything was read. No primary
+button and no line under a row: a row shows its value, and a problem is a
+short red word beside it (`sign_in_problem` on Owner, `sync_problem` on Sync,
+the count on Issues). The owner and this mailbox are verified together, so
+the Owner row carries Sign In while the sign-in is missing; `action_sign_in`
+picks whose (the address's own on Gmail, `signs_in_as_itself`, the owner's
+otherwise). The only run button is the Sync page's Run Now.
+
+The Sync row opens the Sync page (canvas 06, 07): the same record in its
+second form (`view_pan_mail_mailbox_sync_form`, opened by `action_open_sync`
+with `pan_mail_sync_page` in the context, which makes its breadcrumb read
+Sync). Settings (Sync Level, Routing, Import From), the switch
+(`sync_enabled`), and Runs: Last Run, Next Run with Run Now, Mail Log.
+Routing is always a row: below Known Contacts it says replies follow their
+conversation, from there on it is the team picked (`alias_id`;
+`route_to_team` follows it on write).
+
+Every pass writes a `pan.mail.sync.run` outside the savepoint it runs in, so
+a pass that raised still leaves its row, failed. The counts are written
+through the run on the context (`RUN_CTX`); linked is the routing log rows
+the pass wrote, left out is what was read and neither linked nor failed.
+`SYNC_FAILURE_LIMIT` failed runs in a row turn the switch off (Stopped) and
+post once in the chatter to the owner; Run Now that goes through, or the
+switch turned on again, resumes it.
 
 ### Correcting a match
 
@@ -3545,7 +3585,7 @@ and `base.group_system`. `security/ir.model.access.csv` and
 | Group | Read | Read and write |
 |-------|------|----------------|
 | Internal user (`base.group_user`) | `pan.mail.mailbox`, `pan.mail.account`, `pan.mail.domain` | `pan.mail.draft` (create, write, delete), `pan.mail.coverage` (transient; no delete) |
-| Mailbox Manager | everything above, plus `pan.mail.error` (read and delete) | `pan.mail.mailbox`, `pan.mail.account`, `pan.mail.domain`, `pan.mail.routing.log`, `pan.mail.thread.link`, `pan.mail.message.ref` |
+| Mailbox Manager | everything above, plus `pan.mail.error` (read and delete) | `pan.mail.mailbox`, `pan.mail.account`, `pan.mail.domain`, `pan.mail.routing.log`, `pan.mail.sync.run`, `pan.mail.thread.link`, `pan.mail.message.ref` |
 | Administrator (`base.group_system`) | everything above | `pan.mail.provider`, `pan.mail.license` |
 
 The routing log and the two indexes have no internal-user row at all: they

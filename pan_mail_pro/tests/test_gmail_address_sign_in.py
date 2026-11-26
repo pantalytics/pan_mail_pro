@@ -68,7 +68,10 @@ class TestGmailAddressSignIn(HttpCase):
 
     def test_the_mailbox_offers_the_sign_in_and_not_try_again(self):
         self.assertTrue(self.mailbox.signs_in_as_itself)
-        self.assertIn('Sign in as this address', self.mailbox.status_message)
+        self.assertIn('Sign in to Gmail as sales@company.test', self.mailbox.status_message)
+        self.assertTrue(self.mailbox.can_sign_in)
+        self.assertEqual(self.mailbox.with_user(self.manager).action_sign_in()['url'],
+                         f'/mail_pro/connect?as_address=1&mailbox_id={self.mailbox.id}')
         action = self.mailbox.with_user(self.manager).action_sign_in_as_address()
         self.assertEqual(action['url'],
                          f'/mail_pro/connect?as_address=1&mailbox_id={self.mailbox.id}')
