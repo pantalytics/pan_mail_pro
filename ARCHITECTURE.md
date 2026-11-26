@@ -2100,24 +2100,31 @@ is wrong costs a customer an answer. A daily cron drops rows past
 
 ### `pan.mail.sync.run` and the Sync page — is this mailbox being read?
 
-The mailbox form (canvas 04, 05) is a title, one status and rows: Type,
-Notification Mailbox, Owner, Sync, Issues, with the chatter beside it as the
-mailbox's history (`mail.thread`, tracking on the settings a person
-changes). The status (`sync_status`) is said once, in the header: Not
-Checked until the access check or a run has spoken, then Syncing, Failing,
-Stopped or Off; never a green word before anything was read. No primary
-button and no line under a row: a row shows its value, and a problem is a
-short red word beside it (`sign_in_problem` on Owner, `sync_problem` on Sync,
-the count on Issues). The owner and this mailbox are verified together, so
-the Owner row carries Sign In while the sign-in is missing; `action_sign_in`
-picks whose (the address's own on Gmail, `signs_in_as_itself`, the owner's
-otherwise). The only run button is the Sync page's Run Now.
+The mailbox form (canvas 04, 05, redrawn 26 Nov 2026 after Connector Pro's
+connector page) is the address, one status in the header and one card of
+rows, Owner and Sync, with Notification Mailbox under Advanced and the
+chatter beside it as the mailbox's history (`mail.thread`, tracking on the
+settings a person changes). A row that is right is grey; one that waits on a
+person is red (`sign_in_problem` on Owner, `sync_value` with
+`sync_attention` on Sync, the failed runs in a row as a red count). The only
+button is Sign In in the header, while the sign-in is missing;
+`action_sign_in` picks whose (the address's own on Gmail,
+`signs_in_as_itself`, the owner's otherwise).
+
+The status (`sync_status`) is the sync's own: Not Started until the access
+check or a run has spoken, then Syncing; Paused is a person's
+(`action_pause`), Stopped the sync's own after `SYNC_FAILURE_LIMIT` failed
+runs. A failed run is not a state: it is red on the run and counted on the
+rows, the way Airbyte and Fivetran report it. Both Paused and Stopped are
+`sync_enabled` off; the failure count tells them apart.
 
 The Sync row opens the Sync page (canvas 06, 07): the same record in its
 second form (`view_pan_mail_mailbox_sync_form`, opened by `action_open_sync`
 with `pan_mail_sync_page` in the context, which makes its breadcrumb read
-Sync). Settings (Sync Level, Routing, Import From), the switch
-(`sync_enabled`), and Runs: Last Run, Next Run with Run Now, Mail Log.
+Sync). Odoo's statusbar with Pause or Resume (`action_resume`) beside it, a
+red line above the sheet while it is stopped (`sync_note`), Settings (Sync
+Level, Routing, Import From) and one Runs row with Run Now: the runs are the
+level below, and each run's mails and errors are on the run.
 Routing is always a row: below Known Contacts it says replies follow their
 conversation, from there on it is the team picked (`alias_id`;
 `route_to_team` follows it on write).
@@ -2127,8 +2134,8 @@ a pass that raised still leaves its row, failed. The counts are written
 through the run on the context (`RUN_CTX`); linked is the routing log rows
 the pass wrote, left out is what was read and neither linked nor failed.
 `SYNC_FAILURE_LIMIT` failed runs in a row turn the switch off (Stopped) and
-post once in the chatter to the owner; Run Now that goes through, or the
-switch turned on again, resumes it.
+post once in the chatter to the owner; Run Now that goes through, or
+Resume, resumes it.
 
 ### Correcting a match
 

@@ -491,6 +491,14 @@ typo; `tools/ci.sh` gives the same verdict locally in the same container.
 
 - The Odoo UI skill is the default, not a law: where Odoo's standard UI cannot do the job, build the better control (the sync level slider with its checkmarks is one).
   An existing control that works is presumed deliberate: keep it, and ask Rutger before replacing it.
+- A screen change starts from a mockup Rutger approved in the Mail Pro
+  canvas, drawn as a design (`.dc.html` markup). A screenshot of the built
+  screen pasted onto an artboard is not a design and approves nothing: the
+  mailbox page of 19.0.41 passed review against a picture of itself
+  (26 Nov 2026). The reference for a page of rows is Connector Pro's
+  approved connector page (`pan_connector_pro`, `docs/screens.md`, De regel),
+  and the UI check asserts the shape (which rows, which buttons), not only
+  the words.
 - `x_` prefix only on fields added to Odoo's own models (Odoo.sh requirement); a
   `pan.mail.*` model has plain field names
 - Log tags name the flow or the vendor: `[Outgoing Mail]`, `[Incoming Mail]`,

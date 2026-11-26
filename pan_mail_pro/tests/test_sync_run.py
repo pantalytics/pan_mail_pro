@@ -108,16 +108,46 @@ class TestSyncRun(TransactionCase):
         self.mailbox.sync_enabled = True
         self.assertEqual(self.mailbox.sync_failure_count, 0)
 
-    def test_off_is_a_persons_and_says_off(self):
-        self.mailbox.sync_enabled = False
-        self.assertEqual(self.mailbox.sync_status, 'off')
+    def test_pause_and_resume_are_a_persons(self):
+        """Pause is Paused, never Stopped, and both say so once in the
+        chatter; Resume starts the count afresh."""
+        self.mailbox.last_check_date = fields.Datetime.now()
+        self.mailbox.sync_failure_count = 2
+        self.mailbox.action_pause()
+        self.assertFalse(self.mailbox.sync_enabled)
+        self.assertEqual(self.mailbox.sync_status, 'paused')
+        self.mailbox.action_resume()
+        self.assertTrue(self.mailbox.sync_enabled)
+        self.assertEqual(self.mailbox.sync_failure_count, 0)
+        self.assertEqual(self.mailbox.sync_status, 'syncing')
+        bodies = self.mailbox.message_ids.mapped('body')
+        self.assertEqual(sum('Sync paused' in (b or '') for b in bodies), 1)
+        self.assertEqual(sum('Sync resumed' in (b or '') for b in bodies), 1)
+
+    def test_resume_starts_a_stopped_sync(self):
+        self.mailbox.write({'sync_enabled': False,
+                            'sync_failure_count': SYNC_FAILURE_LIMIT,
+                            'error_message': '503 Service Unavailable'})
+        self.assertEqual(self.mailbox.sync_status, 'stopped')
+        self.assertIn('503', self.mailbox.sync_note)
+        self.assertTrue(self.mailbox.sync_attention)
+        self.mailbox.action_resume()
+        self.assertTrue(self.mailbox.sync_enabled)
+        self.assertFalse(self.mailbox.sync_note)
+
+    def test_a_failed_run_is_not_a_state(self):
+        """A failed run is red on the rows, the status stays Syncing."""
+        self.mailbox.write({'last_check_date': fields.Datetime.now(),
+                            'sync_failure_count': 1})
+        self.assertEqual(self.mailbox.sync_status, 'syncing')
+        self.assertTrue(self.mailbox.sync_attention)
 
     def test_never_syncing_before_anything_was_checked(self):
         with patch.object(type(self.mailbox), '_has_working_credentials',
                           return_value=True, autospec=True):
             self.mailbox.invalidate_recordset(['sync_status', 'health_status'])
             self.assertFalse(self.mailbox.last_check_date)
-            self.assertEqual(self.mailbox.sync_status, 'not_checked')
+            self.assertEqual(self.mailbox.sync_status, 'not_started')
             self.mailbox.last_check_date = fields.Datetime.now()
             self.assertEqual(self.mailbox.sync_status, 'syncing')
 
@@ -146,18 +176,30 @@ class TestSyncRun(TransactionCase):
         self.assertEqual(page.display_name, 'Sync')
         self.assertEqual(self.mailbox.display_name, 'runs@company.test')
         arch = etree.fromstring(self.mailbox.get_view(view.id)['arch'])
-        for name in ('sync_level', 'alias_id', 'sync_start_date', 'sync_enabled',
-                     'last_run_text', 'next_run'):
+        for name in ('sync_level', 'alias_id', 'sync_start_date', 'runs_value'):
             self.assertTrue(arch.xpath(f'//field[@name="{name}"]'), name)
+        self.assertTrue(arch.xpath('//header//field[@name="sync_status"][@widget="statusbar"]'))
+        for name in ('action_pause', 'action_resume'):
+            self.assertTrue(arch.xpath(f'//header//button[@name="{name}"]'), name)
+        # Runs is one row, a level of its own: no Last Run, Next Run or
+        # Mail Log rows beside it, and no switch.
+        self.assertFalse(arch.xpath('//field[@name="sync_enabled"]'))
+        self.assertTrue(arch.xpath('//button[@name="action_open_runs"]'))
         self.assertTrue(arch.xpath('//chatter'))
 
-    def test_the_mailbox_page_has_no_primary_button(self):
-        """No primary header button, failing or not: the fix is said on its
-        row. And the term "Sign In as This Address" is on no screen."""
+    def test_the_mailbox_page_has_one_button_sign_in(self):
+        """The only button in the header is Sign In, and only while the
+        sign-in is missing. The rows are Owner and Sync; the term "Sign In
+        as This Address" is on no screen."""
         view = self.env.ref('pan_mail_pro.view_pan_mail_mailbox_form')
         arch = etree.fromstring(self.mailbox.get_view(view.id)['arch'])
-        self.assertFalse(arch.xpath('//header//button'))
-        self.assertFalse(arch.xpath('//button[contains(@class, "btn-primary")]'))
+        buttons = arch.xpath('//header//button')
+        self.assertEqual([b.get('name') for b in buttons], ['action_sign_in'])
+        self.assertIn('can_sign_in', buttons[0].get('invisible'))
+        self.assertEqual(len(arch.xpath('//button[contains(@class, "btn-primary")]')), 1)
+        self.assertTrue(arch.xpath('//button[@name="action_open_sync"]'))
+        for gone in ('action_open_routing_log', 'action_open_issues'):
+            self.assertFalse(arch.xpath(f'//button[@name="{gone}"]'), gone)
         self.assertNotIn('as This Address', etree.tostring(arch).decode())
         self.assertTrue(arch.xpath('//chatter'))
         # The only run button is the Sync page's Run Now.

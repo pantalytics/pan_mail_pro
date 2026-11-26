@@ -877,43 +877,40 @@ class PanMailMailbox(models.Model):
     # -------------------------------------------------------------------------
     # The mailbox page and its Sync page (the Mail Pro canvas, 04 to 09)
     # -------------------------------------------------------------------------
+    # The sync's own state (the Mail Pro canvas, 04 to 07): it walks Not
+    # Started, Syncing; Paused is a person's, Stopped its own after
+    # SYNC_FAILURE_LIMIT failed runs. A failed run is not a state: it is red
+    # on the run and counted on the Runs row, as Airbyte and Fivetran do.
     sync_status = fields.Selection([
-        ('not_checked', 'Not Checked'),
+        ('not_started', 'Not Started'),
         ('syncing', 'Syncing'),
-        ('failing', 'Failing'),
+        ('paused', 'Paused'),
         ('stopped', 'Stopped'),
-        ('off', 'Off'),
-    ], string='Mailbox Status', compute='_compute_sync_status')
+    ], string='Sync Status', compute='_compute_sync_status')
     sign_in_name = fields.Char(string='Sign-In', compute='_compute_sign_in')
     sign_in_problem = fields.Char(compute='_compute_sign_in')
-    # Whether the Sign-In row offers Sign In: this mailbox lacks a working
+    # Whether the header offers Sign In: this mailbox lacks a working
     # sign-in, and Mail Pro knows whose to start for the person looking.
     can_sign_in = fields.Boolean(compute='_compute_sign_in')
-    issue_count = fields.Integer(string='Issues', compute='_compute_issue_count')
-    issue_text = fields.Char(string='Issue Summary', compute='_compute_issue_count')
     run_ids = fields.One2many('pan.mail.sync.run', 'mailbox_id', string='Runs')
-    last_run_text = fields.Char(string='Last Run', compute='_compute_runs_rows')
-    # The Sync row of the mailbox page: its value (the last run, or Off), and
-    # a red word next to it when the sync fails or stopped.
+    # The Sync row of the mailbox page and the Runs row of the Sync page:
+    # their grey value, red when something waits on a person.
     sync_value = fields.Char(string='Sync Summary', compute='_compute_runs_rows')
-    sync_problem = fields.Char(compute='_compute_runs_rows')
-    next_run = fields.Datetime(string='Next Run', compute='_compute_runs_rows')
+    runs_value = fields.Char(string='Runs Summary', compute='_compute_runs_rows')
+    sync_attention = fields.Boolean(compute='_compute_runs_rows')
+    # The line above the Sync page while it cannot run by itself.
+    sync_note = fields.Char(string='Sync Note', compute='_compute_runs_rows')
 
-    @api.depends('sync_enabled', 'sync_failure_count', 'health_status',
+    @api.depends('sync_enabled', 'sync_failure_count',
                  'last_check_date', 'access_checked_date')
     def _compute_sync_status(self):
-        """One word for the badge, said once. Never Syncing before anything
-        was checked: a mailbox nobody has read yet is Not Checked."""
+        """One word, said once. Never Syncing before anything was checked."""
         for record in self:
             if not record.sync_enabled:
                 record.sync_status = 'stopped' \
-                    if record.sync_failure_count >= SYNC_FAILURE_LIMIT else 'off'
-            elif record.health_status == 'error':
-                record.sync_status = 'failing'
+                    if record.sync_failure_count >= SYNC_FAILURE_LIMIT else 'paused'
             elif not record.last_check_date and not record.access_checked_date:
-                record.sync_status = 'not_checked'
-            elif record.sync_failure_count or record._sync_is_stale():
-                record.sync_status = 'failing'
+                record.sync_status = 'not_started'
             else:
                 record.sync_status = 'syncing'
 
@@ -948,42 +945,63 @@ class PanMailMailbox(models.Model):
             if row and row.can_read == 'no':
                 record.sign_in_problem = _('No Access')
 
-    def _compute_issue_count(self):
-        counts = {}
-        if self.ids:
-            for mailbox, count in self.env['pan.mail.error'].sudo()._read_group(
-                    [('mailbox_id', 'in', self.ids)], ['mailbox_id'], ['__count']):
-                counts[mailbox.id] = count
-        for record in self:
-            count = counts.get(record.id, 0)
-            record.issue_count = count
-            record.issue_text = _('%s Errors', count) if count > 1 else (
-                _('1 Error') if count else _('None'))
-
     def _compute_runs_rows(self):
         Run = self.env['pan.mail.sync.run'].sudo()
         cron = self.env.ref('pan_mail_pro.ir_cron_pan_mail_fetch_incoming_mail',
                             raise_if_not_found=False)
+        nextcall = cron.sudo().nextcall if cron and cron.sudo().active else False
+
+        def at(record, when):
+            return fields.Datetime.context_timestamp(record, when).strftime('%d %b %H:%M')
+
         for record in self:
             last = Run.search([('mailbox_id', '=', record.id), ('kind', '=', 'incoming'),
                                ('state', '!=', 'running')], limit=1) if record.id else Run
-            if last:
-                when = fields.Datetime.context_timestamp(record, last.started)
-                if last.state == 'failed':
-                    record.last_run_text = _('%s, failed', when.strftime('%d %b %H:%M'))
-                else:
-                    record.last_run_text = _('%(when)s, %(linked)s linked',
-                                             when=when.strftime('%d %b %H:%M'),
-                                             linked=last.linked_count)
+            status, failed = record.sync_status, record.sync_failure_count
+            stale = status == 'syncing' and record._sync_is_stale()
+            if not last:
+                runs = _('None yet')
+            elif last.state == 'failed':
+                runs = _('Last run %s failed', at(record, last.started))
+            elif status == 'syncing' and nextcall:
+                runs = _('Last run %(last)s, next %(next)s',
+                         last=at(record, last.started), next=at(record, nextcall))
             else:
-                record.last_run_text = _('No run yet')
-            labels = dict(record._fields['sync_status']._description_selection(self.env))
-            record.sync_value = labels['off'] if record.sync_status == 'off' \
-                else record.last_run_text
-            record.sync_problem = labels[record.sync_status] \
-                if record.sync_status in ('failing', 'stopped') else False
-            record.next_run = cron.sudo().nextcall if cron and cron.sudo().active \
-                and record.sync_enabled else False
+                runs = _('Last run %s', at(record, last.started))
+            record.runs_value = runs
+            record.sync_attention = bool(failed) or stale or status == 'stopped'
+            if status == 'stopped':
+                record.sync_value = _('Stopped after %s failed runs', failed)
+            elif status == 'paused':
+                record.sync_value = _('Paused')
+            elif status == 'not_started':
+                record.sync_value = _('Not Started')
+            elif stale:
+                record.sync_value = _('No run since %s', at(record, record.last_check_date))
+            else:
+                record.sync_value = _('Syncing, last run %s', at(record, last.started)) \
+                    if last else _('Syncing')
+            if status == 'stopped':
+                record.sync_note = _('Stopped after %(count)s failed runs: %(reason)s',
+                                     count=failed, reason=record.error_message or _('no reason given'))
+            elif status == 'not_started' and record.sign_in_problem:
+                record.sync_note = _('Starts once the mailbox is signed in.')
+            else:
+                record.sync_note = False
+
+    def action_pause(self):
+        """Pause: the cron leaves the mailbox alone until Resume."""
+        self._check_manager()
+        self.with_context(mail_notrack=True).write({'sync_enabled': False, 'sync_failure_count': 0})
+        for record in self:
+            record.message_post(body=_('Sync paused.'))
+
+    def action_resume(self):
+        """Resume a paused or stopped sync, its failure count afresh."""
+        self._check_manager()
+        self.with_context(mail_notrack=True).write({'sync_enabled': True, 'sync_failure_count': 0})
+        for record in self:
+            record.message_post(body=_('Sync resumed.'))
 
     @api.depends('email')
     @api.depends_context('pan_mail_sync_page')
@@ -1050,36 +1068,10 @@ class PanMailMailbox(models.Model):
         action['context'] = {'pan_mail_sync_page': False}
         return action
 
-    def action_open_issues(self):
-        """This mailbox's rows in the error ledger."""
-        self.ensure_one()
-        action = self.env['ir.actions.act_window']._for_xml_id(
-            'pan_mail_pro.action_pan_mail_error')
-        action['domain'] = [('mailbox_id', '=', self.id)]
-        action['context'] = {}
-        return action
-
     # -------------------------------------------------------------------------
     # The inspection surface: two counters on the form, no fields to fill in
     # -------------------------------------------------------------------------
-    routing_log_count = fields.Integer(
-        string='Routed here', compute='_compute_routing_log_count')
     subtitle = fields.Char(compute='_compute_subtitle')
-
-    def _compute_routing_log_count(self):
-        """How much mail this mailbox has delivered, for the smart button.
-
-        The answer to "is it working" that the form never had: the routing log
-        already knows, and one count next to the address says it before anyone
-        opens a log.
-        """
-        counts = {}
-        if self.ids:
-            for mailbox, count in self.env['pan.mail.routing.log']._read_group(
-                    [('mailbox_id', 'in', self.ids)], ['mailbox_id'], ['__count']):
-                counts[mailbox.id] = count
-        for record in self:
-            record.routing_log_count = counts.get(record.id, 0)
 
     @api.depends('provider_type', 'owner_user_id', 'is_notification_mailbox')
     def _compute_subtitle(self):
@@ -1094,15 +1086,6 @@ class PanMailMailbox(models.Model):
             if record.is_notification_mailbox:
                 parts.append(_('carries the system email'))
             record.subtitle = '  \u00b7  '.join(parts)
-
-    def action_open_routing_log(self):
-        """The routing log, filtered on this mailbox."""
-        self.ensure_one()
-        action = self.env['ir.actions.act_window']._for_xml_id(
-            'pan_mail_pro.action_pan_mail_routing_log')
-        action['domain'] = [('mailbox_id', '=', self.id)]
-        action['context'] = {}
-        return action
 
     def _no_credentials_error(self, sender=None):
         """Why this mailbox has no usable credentials, in the provider's terms.

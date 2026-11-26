@@ -14,8 +14,8 @@
                 <!-- The same one word as the mailbox page's header. -->
                 <field name="sync_status" string="Status" widget="badge"
                        decoration-success="sync_status == 'syncing'"
-                       decoration-danger="sync_status in ('failing', 'stopped')"
-                       decoration-muted="sync_status in ('not_checked', 'off')"/>
+                       decoration-danger="sync_status == 'stopped'"
+                       decoration-muted="sync_status in ('not_started', 'paused')"/>
                 <!-- Editable straight from the list: exactly one mailbox
                      sends the system email, so ticking one here unticks the
                      other, and the last one cannot be unticked. -->
@@ -37,23 +37,25 @@
     </record>
 
     <!-- Form View: the mailbox page (the Mail Pro canvas, 04 and 05).
-
-         One status in the header, said once: Not Checked until the access
-         check or a run has spoken, then Syncing, Failing, Stopped or Off.
-         No primary button: what is wrong is said on the row it belongs to,
-         as a short red word next to the row's value. The rows
-         are Odoo's own group; the Sync row opens the Sync page, the same
-         record in its second form. The chatter is the mailbox's history. -->
+         Connector Pro's pattern: the address, one status in the header, and
+         one card of rows. A row that is right is grey; one that waits on a
+         person is red. The Sync row opens the Sync page, the same record in
+         its second form, where the runs are. The only button is Sign In,
+         while the sign-in is missing. -->
     <record id="view_pan_mail_mailbox_form" model="ir.ui.view">
         <field name="name">pan.mail.mailbox.form</field>
         <field name="model">pan.mail.mailbox</field>
         <field name="arch" type="xml">
             <form string="Mailbox" class="o_mailpro_mailbox_form">
                 <header>
+                    <field name="can_sign_in" invisible="1"/>
+                    <button name="action_sign_in" type="object" string="Sign In"
+                            class="btn-primary" invisible="not can_sign_in or not id"/>
                     <field name="sync_status" widget="badge" class="ms-auto o_mailpro_mailbox_status"
+                           invisible="not id"
                            decoration-success="sync_status == 'syncing'"
-                           decoration-danger="sync_status in ('failing', 'stopped')"
-                           decoration-muted="sync_status in ('not_checked', 'off')"/>
+                           decoration-danger="sync_status == 'stopped'"
+                           decoration-muted="sync_status in ('not_started', 'paused')"/>
                 </header>
                 <sheet>
                     <field name="provider" invisible="1"/>
@@ -61,13 +63,8 @@
                     <field name="active" invisible="1"/>
                     <field name="owner_is_address" invisible="1"/>
                     <field name="health_status" invisible="1"/>
-
-                    <div name="button_box" class="oe_button_box">
-                        <button name="action_open_routing_log" type="object"
-                                class="oe_stat_button" icon="fa-random">
-                            <field name="routing_log_count" widget="statinfo" string="Routed Here"/>
-                        </button>
-                    </div>
+                    <field name="sync_attention" invisible="1"/>
+                    <field name="sync_failure_count" invisible="1"/>
 
                     <div class="oe_title o_mailpro_mailbox_head">
                         <h1>
@@ -75,58 +72,54 @@
                         </h1>
                     </div>
 
-                    <group class="o_mailpro_mailbox_rows">
-                        <!-- Read, not asked: see _compute_provider_type. -->
-                        <field name="provider_type" string="Type"
-                               invisible="not provider_type"/>
+                    <!-- A new mailbox: what it needs before it can be saved. -->
+                    <group invisible="id">
+                        <field name="owner_user_id" string="Owner"
+                               required="is_notification_mailbox"/>
                         <field name="is_notification_mailbox" string="Notification Mailbox"/>
-                        <!-- The owner and this mailbox are verified
-                             together: a row that is right says nothing, a
-                             problem names who lacks what, and Sign In appears
-                             only while the sign-in is missing (Mail Pro picks
-                             whose). On a personal mailbox whoever connected it
-                             owns it, so the owner is read, not picked. -->
-                        <label for="owner_user_id" string="Owner"/>
-                        <div class="o_mailpro_row_owner d-flex align-items-center gap-2">
-                            <field class="w-auto" name="owner_user_id" nolabel="1"
-                                   readonly="owner_is_address and id"
-                                   required="is_notification_mailbox"/>
-                            <field name="sign_in_problem" readonly="1" nolabel="1"
-                                   class="w-auto text-danger small o_mailpro_row_problem"
-                                   invisible="not sign_in_problem"/>
-                            <field name="can_sign_in" invisible="1"/>
-                            <button name="action_sign_in" type="object"
-                                    string="Sign In" class="btn-secondary btn-sm text-nowrap"
-                                    invisible="not can_sign_in"/>
-                            <!-- The only way from an IMAP mailbox to its password. -->
-                            <button name="action_open_account" type="object"
-                                    string="Edit Server Login" class="btn-link btn-sm"
-                                    invisible="provider != 'imap'"/>
-                        </div>
-                        <!-- The value says how it runs; a problem is a red
-                             word next to it. The only run button lives on the
-                             Sync page (Run Now). -->
-                        <label for="sync_value" string="Sync" invisible="not id"/>
-                        <div class="o_mailpro_row_sync d-flex align-items-center gap-2" invisible="not id">
-                            <field name="sync_value" readonly="1" nolabel="1" class="w-auto text-muted"/>
-                            <field name="sync_problem" readonly="1" nolabel="1"
-                                   class="w-auto text-danger small o_mailpro_row_problem"
-                                   invisible="not sync_problem"/>
-                            <button name="action_open_sync" type="object" string="Open"
-                                    class="btn-link btn-sm"/>
-                        </div>
-                        <label for="issue_text" string="Issues" invisible="not id"/>
-                        <div class="o_mailpro_row_issues d-flex align-items-center gap-2" invisible="not id">
-                            <field name="issue_count" invisible="1"/>
-                            <field name="issue_text" readonly="1" nolabel="1"
-                                   decoration-danger="issue_count &gt; 0"
-                                   class="w-auto small"/>
-                            <button name="action_open_issues" type="object" string="Open"
-                                    class="btn-link btn-sm" invisible="not issue_count"/>
-                        </div>
                     </group>
 
-                    <group string="Advanced" groups="base.group_no_one">
+                    <div class="list-group o_mailpro_rows" invisible="not id">
+                        <!-- On a personal mailbox whoever connected it owns
+                             it, so the owner is read, not picked. -->
+                        <div class="list-group-item d-flex align-items-center gap-3 o_mailpro_row_owner">
+                            <span class="flex-grow-1">Owner</span>
+                            <field name="sign_in_problem" readonly="1" nolabel="1"
+                                   class="w-auto text-danger o_mailpro_row_problem"
+                                   invisible="not sign_in_problem"/>
+                            <field class="w-auto" name="owner_user_id" nolabel="1"
+                                   readonly="owner_is_address and id"
+                                   required="is_notification_mailbox"
+                                   options="{'no_create': True}"/>
+                            <!-- The only way from an IMAP mailbox to its password. -->
+                            <button name="action_open_account" type="object"
+                                    string="Edit Server Login" class="btn-link btn-sm p-0"
+                                    invisible="provider != 'imap'"/>
+                        </div>
+                        <button name="action_open_sync" type="object"
+                                class="list-group-item list-group-item-action d-flex align-items-center gap-3 o_mailpro_row_sync">
+                            <span class="flex-grow-1 text-start">Sync</span>
+                            <field name="sync_value" class="w-auto text-muted" invisible="sync_attention"/>
+                            <field name="sync_value" class="w-auto text-danger o_mailpro_row_problem"
+                                   invisible="not sync_attention"/>
+                            <span class="badge rounded-pill text-bg-danger" invisible="not sync_failure_count">
+                                <field name="sync_failure_count"/>
+                            </span>
+                            <i class="fa fa-chevron-right text-muted o_mailpro_chevron" title="Open"/>
+                        </button>
+                    </div>
+
+                    <div class="o_mailpro_rows_title" invisible="not id">Advanced</div>
+                    <div class="list-group o_mailpro_rows" invisible="not id">
+                        <div class="list-group-item d-flex align-items-center gap-3">
+                            <span class="flex-grow-1">Notification Mailbox</span>
+                            <field name="is_notification_mailbox" widget="boolean_toggle"
+                                   nolabel="1" class="w-auto"/>
+                        </div>
+                    </div>
+
+                    <group string="Technical" groups="base.group_no_one">
+                        <field name="provider_type" string="Type" readonly="1"/>
                         <field name="address_kind" string="Kind" readonly="1"/>
                         <field name="last_check_date" string="Last Checked" readonly="1"/>
                         <field name="access_checked_date" string="Access Checked" readonly="1"/>
@@ -154,30 +147,49 @@
     </record>
 
     <!-- The Sync page (the Mail Pro canvas, 06 and 07): the same mailbox in
-         its second form, opened from the mailbox's Sync row. Settings, the
-         switch, and the runs; the chatter beside it. -->
+         its second form, opened from the mailbox's Sync row. One status in
+         the statusbar (Not Started, Syncing; Paused or Stopped while it is
+         one) with Pause or Resume beside it, the settings as rows, and Runs,
+         the level below, where each run's mails and errors are. -->
     <record id="view_pan_mail_mailbox_sync_form" model="ir.ui.view">
         <field name="name">pan.mail.mailbox.sync.form</field>
         <field name="model">pan.mail.mailbox</field>
         <field name="priority">100</field>
         <field name="arch" type="xml">
-            <form string="Sync" class="o_mailpro_mailbox_sync" create="false" delete="false">
+            <form string="Sync" class="o_mailpro_mailbox_form o_mailpro_mailbox_sync" create="false" delete="false">
+                <header>
+                    <button name="action_pause" type="object" string="Pause"
+                            invisible="sync_status != 'syncing'"/>
+                    <button name="action_resume" type="object" string="Resume" class="btn-primary"
+                            invisible="sync_status not in ('paused', 'stopped')"/>
+                    <field name="sync_status" widget="statusbar" statusbar_visible="not_started,syncing"/>
+                </header>
+                <div class="alert alert-danger mb-0 rounded-0" role="alert" invisible="not sync_note">
+                    <field name="sync_note" readonly="1" nolabel="1"/>
+                </div>
                 <sheet>
-                    <group string="Settings" class="o_mailpro_sync_settings">
-                        <!-- One row with the level; the slider and its grid
-                             of what lands where are a page of their own. -->
-                        <label for="sync_level" string="Sync Level"/>
-                        <div class="d-flex align-items-center gap-2">
-                            <field class="w-auto" name="sync_level" readonly="1" nolabel="1"/>
-                            <button name="action_open_sync_level" type="object" string="Open"
-                                    class="btn-link btn-sm"/>
-                        </div>
-                        <!-- Routing is always a row. Replies follow their
-                             conversation whatever is set here; from Known
-                             Contacts on, a new conversation goes to the team
-                             picked, or to the sender's contact. -->
-                        <label for="alias_id" string="Routing"/>
-                        <div class="d-flex align-items-center gap-2">
+                    <field name="sync_attention" invisible="1"/>
+                    <field name="sync_failure_count" invisible="1"/>
+                    <div class="oe_title o_mailpro_mailbox_head">
+                        <h1>Sync</h1>
+                    </div>
+
+                    <div class="o_mailpro_rows_title">Settings</div>
+                    <div class="list-group o_mailpro_rows o_mailpro_sync_settings">
+                        <!-- The slider and its grid of what lands where are
+                             a page of their own. -->
+                        <button name="action_open_sync_level" type="object"
+                                class="list-group-item list-group-item-action d-flex align-items-center gap-3">
+                            <span class="flex-grow-1 text-start">Sync Level</span>
+                            <field name="sync_level" class="w-auto text-muted" readonly="1"/>
+                            <i class="fa fa-chevron-right text-muted o_mailpro_chevron" title="Open"/>
+                        </button>
+                        <!-- Replies follow their conversation whatever is set
+                             here; from Known Contacts on, a new conversation
+                             goes to the team picked, or to the sender's
+                             contact. -->
+                        <div class="list-group-item d-flex align-items-center gap-3">
+                            <span class="flex-grow-1">Routing</span>
                             <span class="text-muted"
                                   invisible="sync_level in ('contacts', 'everyone')">Replies follow their conversation</span>
                             <field class="w-auto" name="alias_id" nolabel="1"
@@ -185,39 +197,34 @@
                                    options="{'no_create': True, 'no_create_edit': True}"
                                    placeholder="Sender's Contact"/>
                         </div>
-                        <field name="sync_start_date" string="Import From"/>
-                    </group>
-                    <group string="Sync">
-                        <label for="sync_enabled" string="Sync"/>
-                        <div class="d-flex align-items-center gap-2">
-                            <field class="w-auto" name="sync_enabled" widget="boolean_toggle" nolabel="1"
-                                  />
-                            <field class="w-auto" name="sync_status" widget="badge" nolabel="1" 
-                                   decoration-success="sync_status == 'syncing'"
-                                   decoration-danger="sync_status in ('failing', 'stopped')"
-                                   decoration-muted="sync_status in ('not_checked', 'off')"/>
+                        <div class="list-group-item d-flex align-items-center gap-3">
+                            <span class="flex-grow-1">Import From</span>
+                            <field class="w-auto" name="sync_start_date" nolabel="1"/>
                         </div>
-                    </group>
-                    <group string="Runs">
-                        <label for="last_run_text" string="Last Run"/>
-                        <div class="d-flex align-items-center gap-2">
-                            <field class="w-auto" name="last_run_text" readonly="1" nolabel="1"/>
-                            <button name="action_open_runs" type="object" string="Open"
-                                    class="btn-link btn-sm"/>
-                        </div>
-                        <label for="next_run" string="Next Run"/>
-                        <div class="d-flex align-items-center gap-2">
-                            <field class="w-auto" name="next_run" readonly="1" nolabel="1"/>
+                    </div>
+
+                    <div class="o_mailpro_rows_title">Runs</div>
+                    <div class="list-group o_mailpro_rows">
+                        <div class="list-group-item list-group-item-action d-flex align-items-center gap-3 o_mailpro_row_runs">
+                            <button name="action_open_runs" type="object"
+                                    class="btn btn-link flex-grow-1 d-flex align-items-center gap-3 p-0 text-reset text-decoration-none">
+                                <span class="flex-grow-1 text-start">Runs</span>
+                                <field name="runs_value" class="w-auto text-muted" invisible="sync_failure_count"/>
+                                <field name="runs_value" class="w-auto text-danger o_mailpro_row_problem"
+                                       invisible="not sync_failure_count"/>
+                                <span class="badge rounded-pill text-bg-danger" invisible="not sync_failure_count">
+                                    <field name="sync_failure_count"/>
+                                </span>
+                            </button>
                             <button name="action_sync_now" type="object" string="Run Now"
-                                    class="btn-secondary btn-sm text-nowrap"/>
+                                    class="btn-secondary btn-sm text-nowrap"
+                                    invisible="sync_status != 'syncing'"/>
+                            <button name="action_open_runs" type="object" class="btn btn-link p-0"
+                                    aria-label="Open Runs">
+                                <i class="fa fa-chevron-right text-muted o_mailpro_chevron" title="Open"/>
+                            </button>
                         </div>
-                        <label for="routing_log_count" string="Mail Log"/>
-                        <div class="d-flex align-items-center gap-2">
-                            <field class="w-auto" name="routing_log_count" readonly="1" nolabel="1"/>
-                            <button name="action_open_routing_log" type="object" string="Open"
-                                    class="btn-link btn-sm"/>
-                        </div>
-                    </group>
+                    </div>
                 </sheet>
                 <chatter/>
             </form>

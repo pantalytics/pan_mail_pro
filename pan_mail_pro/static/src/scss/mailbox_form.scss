@@ -47,7 +47,49 @@ $mailpro-ink: if($mailpro-dark, #fff, #001d21);
         }
     }
 
-    .o_mailpro_mailbox_rows {
-        margin-top: 0;
+    // Connector Pro's rows (the brand guide's drill-down): Bootstrap's
+    // list-group, Odoo's badge and chevron, no colour of ours. A row that
+    // opens a level is Odoo's own object button with its contents inside.
+    .o_mailpro_rows {
+        max-width: 40rem;
+
+        > .list-group-item {
+            min-height: 3rem;
+        }
+
+        > button.list-group-item {
+            border-radius: 0;
+            font-weight: normal;
+            text-transform: none;
+        }
+
+        > button.list-group-item:first-child {
+            border-top-left-radius: inherit;
+            border-top-right-radius: inherit;
+        }
+
+        > button.list-group-item:last-child {
+            border-bottom-left-radius: inherit;
+            border-bottom-right-radius: inherit;
+        }
+
+        .o_field_widget {
+            width: auto;
+            margin-bottom: 0;
+        }
+    }
+
+    .o_mailpro_rows_title {
+        max-width: 40rem;
+        margin: 1.5rem 0 0.5rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: $o-gray-600;
+    }
+
+    .o_mailpro_rows + .o_mailpro_rows_title {
+        margin-top: 1.5rem;
     }
 }
