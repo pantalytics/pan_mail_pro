@@ -76,7 +76,7 @@
                             <field name="sign_in_problem" readonly="1" nolabel="1"
                                    class="w-auto text-danger o_mailpro_row_problem"
                                    invisible="not sign_in_problem"/>
-                            <field class="w-auto" name="owner_user_id" nolabel="1"
+                            <field class="w-auto text-end text-muted" name="owner_user_id" nolabel="1"
                                    readonly="owner_is_address and id"
                                    required="is_notification_mailbox"
                                    options="{'no_create': True}"/>

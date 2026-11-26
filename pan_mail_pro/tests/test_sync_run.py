@@ -163,6 +163,11 @@ class TestSyncRun(TransactionCase):
             self.mailbox.last_check_date = fields.Datetime.now()
             self.assertEqual(self.mailbox.sync_status, 'syncing')
 
+    def test_a_run_means_it_started(self):
+        self.assertEqual(self.mailbox.sync_status, 'not_started')
+        self.Run.create({'mailbox_id': self.mailbox.id, 'state': 'done'})
+        self.assertEqual(self.mailbox.sync_status, 'syncing')
+
     def test_routing_follows_the_team_picked(self):
         alias = self.env['mail.alias'].search([('alias_name', '!=', False)], limit=1)
         if not alias:

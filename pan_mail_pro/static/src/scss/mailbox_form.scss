@@ -77,6 +77,16 @@ $mailpro-ink: if($mailpro-dark, #fff, #001d21);
             width: auto;
             margin-bottom: 0;
         }
+
+        // A value sits on the right of its row, grey, as on Connector Pro.
+        .o_mailpro_row_owner .o_field_many2one {
+            margin-left: auto;
+
+            input {
+                text-align: end;
+                color: $o-gray-600;
+            }
+        }
     }
 
     .o_mailpro_rows_title {

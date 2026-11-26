@@ -902,14 +902,16 @@ class PanMailMailbox(models.Model):
     sync_note = fields.Char(string='Sync Note', compute='_compute_runs_rows')
 
     @api.depends('sync_enabled', 'sync_failure_count',
-                 'last_check_date', 'access_checked_date')
+                 'last_check_date', 'access_checked_date', 'run_ids')
     def _compute_sync_status(self):
-        """One word, said once. Never Syncing before anything was checked."""
+        """One word, said once. Never Syncing before anything was checked,
+        and never Not Started once a run exists."""
         for record in self:
             if not record.sync_enabled:
                 record.sync_status = 'stopped' \
                     if record.sync_failure_count >= SYNC_FAILURE_LIMIT else 'paused'
-            elif not record.last_check_date and not record.access_checked_date:
+            elif not record.last_check_date and not record.access_checked_date \
+                    and not record.run_ids:
                 record.sync_status = 'not_started'
             else:
                 record.sync_status = 'syncing'
