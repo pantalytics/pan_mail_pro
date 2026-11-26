@@ -480,12 +480,17 @@ depending on where the session runs:
 `--auto` / auto-merge is the part that makes this work unattended: GitHub
 merges the moment CI is green, so there is nothing to come back to.
 
+Agents squash-merge their own UI PRs to `main` once CI is green (Rutger, 2026-11-25).
+The release branches `18.0`, `19.0` and `20.0` are never touched without him.
+
 **Running the suite before you push is the whole point in a cloud session.** A
 push-and-wait loop costs four minutes per round trip and burns a CI run per
 typo; `tools/ci.sh` gives the same verdict locally in the same container.
 
 ## Conventions
 
+- The Odoo UI skill is the default, not a law: where Odoo's standard UI cannot do the job, build the better control (the sync level slider with its checkmarks is one).
+  An existing control that works is presumed deliberate: keep it, and ask Rutger before replacing it.
 - `x_` prefix only on fields added to Odoo's own models (Odoo.sh requirement); a
   `pan.mail.*` model has plain field names
 - Log tags name the flow or the vendor: `[Outgoing Mail]`, `[Incoming Mail]`,

@@ -113,19 +113,7 @@
         <field name="domain">[('x_direction', '!=', False)]</field>
         <field name="context">{'search_default_filter_last_30_days': 1}</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">
-                No communication recorded yet
-            </p>
-            <p>
-                Every email Mail Pro sends or receives from now on appears here,
-                together with the document it is linked to.
-            </p>
-            <p>
-                This is a read-only overview. Mail sent before this version was
-                installed is not shown: its direction and mailbox cannot be
-                established after the fact, and a wrong answer would be worse
-                than an absent one.
-            </p>
+            <p>No email recorded yet</p>
         </field>
     </record>
 

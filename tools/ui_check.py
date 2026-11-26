@@ -155,12 +155,20 @@ class Checks:
         page.wait_for_timeout(800)
         self.shot('settings-mail-pro.png')
 
+        # The checklist sits under no grey block title: the tab already
+        # names the app (pantalytics-odoo-ui, Settings).
+        titles = page.eval_on_selector_all(
+            '.app_settings_block[data-key=pan_mail_pro] h2',
+            'els => els.map(e => e.textContent.trim())')
+        if 'Setup' in titles:
+            self.fail('the Mail Pro settings still show a "Setup" block title')
+
         steps = page.query_selector_all('.o_mailpro_step')
         if len(steps) != 5:
             self.fail(f'the checklist has {len(steps)} steps, expected 5')
         names = [s.query_selector('.o_mailpro_step_name').inner_text().strip() for s in steps]
-        if names != ['1. Pantalytics account', '2. Email provider',
-                     '3. Internal domains', '4. Mailboxes', '5. Notification mailbox']:
+        if names != ['Pantalytics Account', 'Email Provider',
+                     'Internal Domains', 'Mailboxes', 'Notification Mailbox']:
             self.fail(f'the steps read {names}')
 
         for index, step in enumerate(steps, start=1):
@@ -182,11 +190,9 @@ class Checks:
             if any(line.strip() == code for line in text.splitlines()):
                 self.fail(f'the page shows the selection code "{code}" instead of its label')
 
-        version = manifest_version()
-        if version not in text:
-            self.fail(f'About does not show the version {version}')
-        if 'Pantalytics B.V.' not in text:
-            self.fail('About does not carry the copyright line')
+        # No About block: the version is on Apps, the licence in the module.
+        if 'Pantalytics B.V.' in text or 'Elastic License' in text:
+            self.fail('the Mail Pro settings still carry the About block')
 
         # Step 1, connected: one word, and nothing of the not-connected or
         # pending states leaking onto the screen. The seed's answer names no
@@ -194,7 +200,7 @@ class Checks:
         # `settings_workspace_name`'s. Who connected, usage and
         # billing and the way out moved to the account page behind the arrow.
         head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
-        if head != '1. Pantalytics account Connected':
+        if head != 'Pantalytics Account Connected':
             self.fail(f'step 1 reads "{head}", not "Connected"')
         if 'Connected by' in steps[0].inner_text():
             self.fail('step 1 still says who connected; that is the account page')
@@ -209,7 +215,7 @@ class Checks:
         # line. The move itself is on the provider form behind the arrow.
         # Pantalytics is not an email provider, so its app is never named.
         head = ' '.join(steps[1].query_selector('.o_mailpro_step_head').inner_text().split())
-        if head != '2. Email provider Microsoft 365':
+        if head != 'Email Provider Microsoft 365':
             self.fail(f'step 2 on an own app reads "{head}", not "Microsoft 365"')
         # Amber, not red: the old sign-ins keep working, nothing is broken.
         if not steps[1].query_selector('.o_mailpro_dot_attention:visible'):
@@ -277,7 +283,7 @@ class Checks:
             step = step_1('Acme')
             self.shot('settings-workspace-name.png')
             head = ' '.join(step.query_selector('.o_mailpro_step_head').inner_text().split())
-            if head != '1. Pantalytics account Acme':
+            if head != 'Pantalytics Account Acme':
                 self.fail(f'step 1 with a workspace name reads "{head}"')
 
             step = step_1(long_name)
@@ -303,11 +309,11 @@ class Checks:
     def up_and_running(self):
         """Five steps done (#415): the checklist folds into "Mail Pro is
         up and running", confetti flies once per database and never on a
-        reload, Show setup unfolds the five green steps, and the one next action opens the colleagues who have not
-        connected a mailbox, with Take the tour beside it, which opens the
-        Inbox on its tour. The seed is mid-setup on purpose (an own Azure
-        app, two stopped mailboxes, a personal notification mailbox), so the
-        walk stands the green in for itself and puts the seed back after.
+        reload, Show Setup unfolds the five green steps, and the one next
+        action opens the colleagues who have not connected a mailbox. No
+        illustration and no second button: the Inbox has its own tour. The
+        seed is mid-setup on purpose (an own Azure app, two stopped
+        mailboxes, a personal notification mailbox), so the walk stands the green in for itself and puts the seed back after.
         No mail has to have arrived: the checklist is configuration only.
         """
         page = self.page
@@ -345,10 +351,6 @@ class Checks:
             except Exception:
                 return False
 
-        def launched():
-            return 'o_mailpro_launch' in (
-                page.get_attribute('.o_mailpro_rocket', 'class') or '')
-
         try:
             call('pan.mail.provider', 'unlink', [r['id'] for r in rows])
             call('pan.mail.provider', 'create', {
@@ -377,7 +379,7 @@ class Checks:
                     'email': 'colleague@example.com'}, context={'no_reset_password': True})
             call('ir.config_parameter', 'set_param', param, False)
 
-            # The first time: the line, the rocket going up, confetti.
+            # The first time: the line and confetti.
             first = open_settings()
             confetti = flew()
             page.wait_for_timeout(350)
@@ -388,8 +390,8 @@ class Checks:
                 self.fail(f'the first page that says up and running was not the first ({first})')
             if not confetti:
                 self.fail('no confetti the first time Mail Pro is up and running')
-            if not launched():
-                self.fail('the rocket did not go up the first time')
+            if page.query_selector('.o_mailpro_running svg'):
+                self.fail('the up-and-running line still carries an illustration')
             if page.query_selector('.o_mailpro_confetti'):
                 self.fail('the confetti layer stays on the page after it landed')
             block = page.query_selector('div.app_settings_block[data-key=pan_mail_pro]')
@@ -403,23 +405,23 @@ class Checks:
                 self.fail(f'{len(shown)} setup steps are still on screen once it is up and running')
             primary = [b.inner_text().strip() for b in block.query_selector_all('.btn-primary')
                        if b.is_visible()]
-            if primary != ['Invite your colleagues to connect their mailbox']:
+            if primary != ['Invite Colleagues']:
                 self.fail(f'the one next action reads {primary}')
             if page.query_selector('.o_mailpro_running_msg'):
                 self.fail('a shared notification mailbox still shows the personal-mailbox line')
             secondary = [b.inner_text().strip()
                          for b in block.query_selector_all('.o_mailpro_running .btn-secondary')
                          if b.is_visible()]
-            if secondary != ['Take the tour']:
-                self.fail(f'beside the invite: {secondary}, expected "Take the tour"')
+            if secondary:
+                self.fail(f'beside the invite: {secondary}, expected nothing')
 
             # A reload is not a second time, and Show setup is a click away.
             again = open_settings()
-            if again is not False or flew() or launched():
+            if again is not False or flew():
                 self.fail('the confetti flew again on a reload')
             toggle = page.query_selector('button.o_mailpro_show_setup')
-            if not toggle or toggle.inner_text().strip() != 'Show setup':
-                self.fail('the folded checklist offers no "Show setup"')
+            if not toggle or toggle.inner_text().strip() != 'Show Setup':
+                self.fail('the folded checklist offers no "Show Setup"')
             else:
                 toggle.click()
                 page.wait_for_timeout(500)
@@ -432,7 +434,7 @@ class Checks:
                             if d.is_visible()]
                     if len(dots) != 1 or 'o_mailpro_dot_ok' not in dots[0]:
                         self.fail(f'step {index} under Show setup shows {dots}, not green')
-                if toggle.inner_text().strip() != 'Hide setup':
+                if toggle.inner_text().strip() != 'Hide Setup':
                     self.fail(f'the open checklist\'s button reads "{toggle.inner_text().strip()}"')
                 self.rows_only_report(steps, 'up and running, unfolded')
 
@@ -446,7 +448,7 @@ class Checks:
             line = page.query_selector('.o_mailpro_running_msg')
             if not line or not line.is_visible():
                 self.fail('up and running with a personal notification mailbox shows no line for it')
-            elif ' '.join(line.inner_text().split()) != 'System email from a personal mailbox':
+            elif ' '.join(line.inner_text().split()) != 'Personal mailbox':
                 self.fail(f'the personal-mailbox line reads "{line.inner_text().strip()}"')
             else:
                 line.click()
@@ -464,8 +466,8 @@ class Checks:
             still = open_settings()
             if still is not True:
                 self.fail('the first time under reduced motion was not the first')
-            if flew() or launched():
-                self.fail('confetti or the rocket moved under prefers-reduced-motion')
+            if flew():
+                self.fail('confetti flew under prefers-reduced-motion')
             page.emulate_media(reduced_motion='no-preference')
 
             # The next action: the colleagues with no mailbox, on Odoo's own
@@ -480,33 +482,11 @@ class Checks:
             listed = sorted(' '.join(c.inner_text().split()) for c in
                             page.query_selector_all('.o_list_view .o_data_row td[name=name]'))
             if 'Colleague Without Mailbox' not in listed or listed != expected:
-                self.fail(f'Invite your colleagues lists {listed}, expected {expected}')
+                self.fail(f'Invite Colleagues lists {listed}, expected {expected}')
             crumb = ' '.join(page.inner_text('.o_breadcrumb').split())
-            if 'Invite your colleagues' not in crumb:
+            if 'Invite Colleagues' not in crumb:
                 self.fail(f'the invite list is titled "{crumb}"')
 
-            # Take the tour: the Inbox, and the tour its "?" starts (#393),
-            # walked to the end so the tour's own check starts clean.
-            admin = call('res.users', 'search', [('login', '=', 'admin')])
-            tour = call('web_tour.tour', 'search', [('name', '=', self.TOUR)])
-            call('web_tour.tour', 'write', tour, {'user_consumed_ids': [(3, admin[0])]})
-            open_settings()
-            page.click('button.o_mailpro_take_tour')
-            page.wait_for_selector('.o_mailpro_inbox .o_mailpro_item', timeout=30000)
-            where = 'Take the tour from Settings'
-            if (self.tour_step(page, self.TOUR_RECORD, 'record',
-                               'up-and-running-tour-1-record.png', where)
-                    and self.tour_step(page, self.TOUR_LINK, 'link',
-                                       'up-and-running-tour-2-link.png', where)):
-                self.tour_close_dialog(page, where)
-                if (self.tour_step(page, self.TOUR_FILTERS, 'contact',
-                                   'up-and-running-tour-3-contact.png', where)
-                        and self.tour_step(page, self.TOUR_SEARCH, 'search',
-                                           'up-and-running-tour-4-search.png', where)):
-                    self.tour_over(page, where)
-            if not call('web_tour.tour', 'search_count',
-                        [('name', '=', self.TOUR), ('user_consumed_ids', 'in', admin)]):
-                self.fail('the tour taken from Settings is not recorded as seen')
         finally:
             page.emulate_media(reduced_motion='no-preference')
             call('ir.config_parameter', 'set_param', param, False)
@@ -651,15 +631,10 @@ class Checks:
             if not steps[0].query_selector('button:has-text("Connect to Pantalytics")'):
                 self.fail('the Connect button is not on step 1')
             text = block.inner_text()
-            # About (the version and the licence line) stays: a support mail
-            # and the documentation link are wanted before connecting too.
-            for leaked in ('2. Email provider', '3. Internal domains', 'Connect Mailbox',
+            for leaked in ('Email Provider', 'Internal Domains', 'Connect Mailbox',
                            'Connected mailboxes'):
                 if leaked in text:
                     self.fail(f'an unlinked database still shows "{leaked}"')
-            for wanted in ('Elastic License', manifest_version(), 'Documentation'):
-                if wanted not in text:
-                    self.fail(f'an unlinked database no longer shows "{wanted}"')
             self.error_free('Settings without a Pantalytics account')
         finally:
             self.call('pan.mail.license', 'create', {
@@ -692,7 +667,7 @@ class Checks:
             if len(steps) != 1:
                 self.fail(f'a refused key shows {len(steps)} setup steps, expected only step 1')
             head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
-            if head != '1. Pantalytics account Disconnected':
+            if head != 'Pantalytics Account Disconnected':
                 self.fail(f'a refused key reads "{head}" on step 1')
             # One short line, then the button (#366).
             msgs = [' '.join(m.inner_text().split())
@@ -705,7 +680,7 @@ class Checks:
             if len(again) != 1:
                 self.fail(f'a refused key shows {len(again)} Connect again buttons, expected 1')
             text = block.inner_text()
-            for leaked in ('2. Email provider', 'Key Refused', 'recognises',
+            for leaked in ('Email Provider', 'Key Refused', 'recognises',
                            'Sign in with Microsoft', 'Pantalytics app'):
                 if leaked in text:
                     self.fail(f'a refused key still shows "{leaked}"')
@@ -745,7 +720,7 @@ class Checks:
                           f'expected all 5: only incoming waits')
                 return
             head = ' '.join(steps[0].query_selector('.o_mailpro_step_head').inner_text().split())
-            if head != '1. Pantalytics account Incoming paused':
+            if head != 'Pantalytics Account Incoming paused':
                 self.fail(f'step 1 over the mail limit reads "{head}"')
             text = ' '.join(steps[0].inner_text().split())
             if '500 mails this month. Add a card to keep receiving.' not in text:
@@ -836,7 +811,7 @@ class Checks:
         """A database with no mailbox yet opens the Inbox on the way back to
         the setup checklist, one line and one button, not on chatter mail: on
         a fresh Odoo.sh database it opened on OdooBot's "Welcome to Odoo!"
-        (3 Nov). The button is Finish setup, to Settings, Mail Pro: a mailbox
+        (3 Nov). The button is Finish Setup, to Settings, Mail Pro: a mailbox
         needs the provider before it (6 Nov)."""
         action = dict(module_menu_actions(self.call)).get('Inbox')
         page = self.page
@@ -854,17 +829,17 @@ class Checks:
             if page.query_selector('.o_mailpro_item, .o_mailpro_folder'):
                 self.fail('with no mailbox the Inbox still draws conversations or folders')
             buttons = [b.inner_text().strip() for b in
-                       page.query_selector_all('.o_mailpro_gate_no_mailbox button')
+                       page.query_selector_all('.o_mailpro_gate_screen_no_mailbox button')
                        if b.is_visible()]
-            if buttons != ['Finish setup']:
-                self.fail(f'the no-mailbox Inbox offers {buttons}, expected "Finish setup"')
+            if buttons != ['Finish Setup']:
+                self.fail(f'the no-mailbox Inbox offers {buttons}, expected "Finish Setup"')
                 return
-            page.click('.o_mailpro_gate_no_mailbox button')
+            page.click('.o_mailpro_gate_screen_no_mailbox button')
             try:
                 page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
                                        timeout=60000)
             except Exception:
-                self.fail(f'"Finish setup" did not open the Mail Pro settings; '
+                self.fail(f'"Finish Setup" did not open the Mail Pro settings; '
                           f'it is on {page.url}')
                 return
             self.error_free('the no-mailbox Inbox')
@@ -972,7 +947,20 @@ class Checks:
             self.shot('inbox-not-connected.png')
             if page.query_selector('.o_mailpro_folder'):
                 self.fail('an unlinked database still draws the mailbox list')
-            connect = [b for b in page.query_selector_all('.o_mailpro_gate button')
+            # Inside Odoo's shell (canvas 13): the navbar stays, the one
+            # button is in the bar, one line says why, and there is no logo
+            # and no "Back to Odoo" out of a screen that never left.
+            if not self.visible('nav.o_main_navbar'):
+                self.fail("the Inbox gate hides Odoo's navbar")
+            if not page.query_selector('.o_mailpro_gate_screen .o_mailpro_topbar .btn-primary'):
+                self.fail('the Inbox gate has no primary button in its bar')
+            title = page.query_selector('.o_mailpro_gate_title')
+            if not title or title.inner_text().strip() != 'Not connected to Pantalytics':
+                self.fail('the Inbox gate does not say "Not connected to Pantalytics"')
+            if page.query_selector('.o_mailpro_gate img') or \
+                    page.query_selector('.o_mailpro_gate_screen a:has-text("Back to Odoo")'):
+                self.fail('the Inbox gate still draws a logo or a "Back to Odoo"')
+            connect = [b for b in page.query_selector_all('.o_mailpro_gate_screen button')
                        if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
             if len(connect) != 1:
                 self.fail(f'the Inbox gate shows {len(connect)} Connect buttons, expected 1')
@@ -1019,8 +1007,8 @@ class Checks:
             # fix, so the same button opens Settings, which says what is.
             self.call('pan.mail.license', 'write', [link[0]['id']], {'status': 'canceled'})
             page.goto(f'{self.base}/odoo/action-{action}', wait_until='domcontentloaded')
-            page.wait_for_selector('.o_mailpro_gate button', timeout=30000)
-            page.click('.o_mailpro_gate button')
+            page.wait_for_selector('.o_mailpro_gate_screen button', timeout=30000)
+            page.click('.o_mailpro_gate_screen button')
             try:
                 page.wait_for_selector('div.app_settings_block[data-key=pan_mail_pro]',
                                        timeout=60000)
@@ -1081,7 +1069,7 @@ class Checks:
                 return
             page.wait_for_timeout(800)
             self.shot('inbox-copy-not-connected.png')
-            connect = [b for b in page.query_selector_all('.o_mailpro_gate button')
+            connect = [b for b in page.query_selector_all('.o_mailpro_gate_screen button')
                        if b.is_visible() and b.inner_text().strip() == 'Connect to Pantalytics']
             if len(connect) != 1:
                 self.fail(f'the Inbox gate on a copy shows {len(connect)} Connect buttons, expected 1')
@@ -1450,29 +1438,21 @@ class Checks:
         if page.query_selector('.o_mailpro_conversation_list_head .o_mailpro_filter_toggle'):
             self.fail('the conversation list still carries its own filter button')
 
-        # One bar, not two. The action is fullscreen, so `web.WebClient` draws
-        # no navbar over this screen and the row it used to take belongs to the
-        # mail. The Inbox's own bar carries what the navbar carried: the way
-        # back to Odoo on the left, the systray on the right. A regression here
-        # is either a second bar coming back, or -- worse -- a fullscreen
-        # screen with no door out of it.
-        strays = page.evaluate(
-            "document.querySelectorAll("
-            "'.o_main_navbar:not(.o_mailpro_topbar_end)').length")
-        if strays:
-            self.fail("Odoo's navbar is drawn over the Inbox: two bars over the mail")
-        home = page.query_selector('.o_mailpro_topbar .o_mailpro_home')
-        if not home or not home.is_visible():
-            self.fail('the fullscreen Inbox has no way back to Odoo')
-        elif home.get_attribute('href') != '/odoo':
-            self.fail('the way back out of the Inbox does not go to Odoo')
-        if not page.query_selector('.o_mailpro_topbar_end .o_menu_systray > *'):
-            self.fail('the systray went with the navbar and nothing brought it back')
-        else:
-            box = page.query_selector('.o_mailpro_topbar_end').bounding_box()
-            bar = page.query_selector('.o_mailpro_topbar').bounding_box()
-            if box['height'] > bar['height']:
-                self.fail('the systray is taller than the bar holding it')
+        # Inside Odoo's shell (canvas 10): Odoo's navbar is drawn over the
+        # Inbox and carries the systray and the way back, so the Inbox's own
+        # bar carries neither. Its bar says where you are ("Inbox"), and New
+        # Email is the one primary button on the screen.
+        if not self.visible('nav.o_main_navbar'):
+            self.fail("Odoo's navbar is not drawn over the Inbox: it went fullscreen again")
+        if page.query_selector('.o_mailpro_topbar .o_mailpro_home, .o_mailpro_topbar .o_menu_systray'):
+            self.fail('the Inbox bar still draws its own way home or systray')
+        crumb = page.query_selector('.o_mailpro_topbar .o_mailpro_crumb')
+        if not crumb or crumb.inner_text().strip() != 'Inbox':
+            self.fail('the Inbox bar does not say where you are')
+        primaries = [b for b in page.query_selector_all('.o_mailpro_inbox .btn-primary') if b.is_visible()]
+        if len(primaries) != 1 or 'o_mailpro_new' not in (primaries[0].get_attribute('class') or ''):
+            self.fail('the Inbox shows %d primary buttons, expected only New Email: %r'
+                      % (len(primaries), [b.inner_text().strip()[:20] for b in primaries]))
 
         # The filter menu opens once, over the list, not once per mailbox.
         page.click('.o_mailpro_topbar .o_searchview_dropdown_toggler')
@@ -1606,7 +1586,7 @@ class Checks:
             if shown != picked:
                 self.fail(f'the record pane shows "{shown}", expected the picked "{picked}"')
             head = page.query_selector('.o_mailpro_conversation_head .o_mailpro_conversation_title')
-            if not head or head.inner_text().strip() != 'New email':
+            if not head or head.inner_text().strip() != 'New Email':
                 self.fail('the pane head does not say a new email is being written')
             if not page.query_selector(
                     '.o_mailpro_conversation_head button:has-text("Send")'):
@@ -1897,9 +1877,12 @@ class Checks:
         if page.query_selector('.o_mailpro_conversation_head button:has-text("Log note")'):
             self.fail('the Mail tab offers Log note')
 
-        # The screen's one primary action. A reader-only inbox is half a
-        # product, and this is the click that proves it is not one.
-        reply = page.query_selector('.o_mailpro_conversation_head button.btn-primary')
+        # Reply: a reader-only inbox is half a product, and this is the click
+        # that proves it is not one. On a desktop it is secondary: New Email
+        # is the screen's one primary (canvas 10).
+        reply = page.query_selector('.o_mailpro_conversation_head button.o_mailpro_primary_action:has-text("Reply")')
+        if reply and 'btn-primary' in (reply.get_attribute('class') or ''):
+            self.fail('Reply is a second primary button beside New Email')
         if not reply:
             self.fail('the conversation has no Reply button')
         else:
@@ -1917,6 +1900,17 @@ class Checks:
                 page.wait_for_timeout(600)
                 if page.query_selector('.modal .o_form_view'):
                     self.fail('Reply opened the composer in a dialog')
+                # While writing, Send is the one primary and comes first;
+                # New Email steps back (canvas 11).
+                new = page.query_selector('.o_mailpro_new')
+                if new and 'btn-primary' in (new.get_attribute('class') or ''):
+                    self.fail('New Email stays primary while a reply is open')
+                order = page.evaluate(
+                    "[...document.querySelectorAll('.o_mailpro_conversation_head button')]"
+                    ".filter(b => b.offsetParent).map(b => b.innerText.trim())"
+                    ".filter(t => ['Send', 'Save Draft', 'Discard', 'Close'].includes(t))")
+                if order[:1] != ['Send']:
+                    self.fail(f'the composer buttons read {order}, Send not first')
                 # The chatter fills "To" from the record; the composer on its
                 # own fills nothing, and a reply to nobody is the one bug a
                 # green suite cannot see. The seeded conversation has a customer,
@@ -3048,9 +3042,8 @@ class Checks:
                 self.fail('the search box is %dpx wide on a 390px phone' % box['width'])
             if box['height'] > bar['height'] or box['y'] + box['height'] > bar['y'] + bar['height']:
                 self.fail('the search bar does not fit the bar it is in on a phone')
-        home = page.query_selector('.o_mailpro_home')
-        if not home or not home.is_visible():
-            self.fail('a phone has no way back to Odoo from the Inbox')
+        if not self.visible('nav.o_main_navbar'):
+            self.fail("a phone has no Odoo navbar over the Inbox, so no way back")
         button = page.query_selector('.o_mailpro_pane_toggle_mailbox_list')
         if not button or not button.is_visible():
             self.fail('a phone has no button for the mailbox list')
@@ -3123,9 +3116,17 @@ class Checks:
         if reading and reading.bounding_box()['y'] > 844 * 0.25:
             self.fail('the mail starts %dpx down a 844px phone'
                       % reading.bounding_box()['y'])
-        floating = page.query_selector('.o_mailpro_conversation_head button:has-text("Reply")')
-        if floating and floating.bounding_box()['y'] < 844 * 0.75:
-            self.fail('Reply is not at the bottom of the phone, where a thumb is')
+        # Reply is the primary button at the top of the conversation, where
+        # Odoo puts a phone's first header button (canvas 12), not a pill
+        # floating over the bottom of the mail.
+        reply = page.query_selector('.o_mailpro_conversation_head button.btn-primary:has-text("Reply")')
+        if not reply or not reply.is_visible():
+            self.fail('a phone has no primary Reply in the conversation head')
+        elif reply.bounding_box()['y'] > 844 * 0.4:
+            self.fail('Reply is %dpx down the phone, not at the top' % reply.bounding_box()['y'])
+        if page.evaluate("[...document.querySelectorAll('.o_mailpro_conversation button')]"
+                         ".some(b => b.offsetParent && getComputedStyle(b.closest('.o_mailpro_actions') || b).position === 'absolute')"):
+            self.fail('a button still floats over the mail on a phone')
         # A finger, not a pointer: every button in that bar and the two at
         # the top are at least the 44px a phone mail app draws them at. The
         # first version had 24px icons beside a 36px Reply.
@@ -3322,7 +3323,7 @@ class Checks:
         page.wait_for_timeout(600)
 
         save = page.query_selector(
-            '.o_mailpro_conversation_head button:has-text("Save draft")')
+            '.o_mailpro_conversation_head button:has-text("Save Draft")')
         if not save:
             self.fail('an open reply cannot be saved as a draft')
             return
@@ -4501,7 +4502,7 @@ class Checks:
             self.shot('settings-step5-personal.png')
             if len(dots) != 1 or 'o_mailpro_dot_attention' not in dots[0]:
                 self.fail(f'step 5 with a personal notification mailbox shows {dots}, not amber')
-            if 'System email from a personal mailbox' not in msgs:
+            if 'Personal mailbox' not in msgs:
                 self.fail(f'step 5 with a personal notification mailbox reads {msgs}')
             self.click_row(step)
             page.wait_for_selector('.o_list_view', timeout=30000)
@@ -4510,14 +4511,18 @@ class Checks:
                 self.fail('the Mailboxes list still offers "Create a shared mailbox" (#417)')
             action = dict(module_menu_actions(self.call)).get('Mailboxes')
             self.form_text(f'{self.base}/odoo/action-{action}/{carrier["id"]}')
-            if not page.query_selector('.o_form_view .o_field_widget[name="sync_level"]'):
-                self.fail('the notification mailbox hides its sync level')
+            if not page.query_selector('.o_form_view button[name="action_open_sync"]'):
+                self.fail('the notification mailbox has no way to its Sync page')
+            # The Owner row is always there (canvas 04): read on a personal
+            # mailbox, picked on a shared one.
             owner = '.o_form_view .o_field_widget[name="owner_user_id"]'
-            if page.query_selector(owner):
-                self.fail('the personal mailbox shows its owner')
-            self.form_text(f'{self.base}/odoo/action-{action}/{shared["id"]}')
             if not page.query_selector(owner):
-                self.fail('the shared mailbox does not show its owner')
+                self.fail('the personal mailbox does not show its owner')
+            elif page.query_selector(f'{owner} input'):
+                self.fail('the personal mailbox lets its owner be picked')
+            self.form_text(f'{self.base}/odoo/action-{action}/{shared["id"]}')
+            if not page.query_selector(f'{owner} input'):
+                self.fail('the shared mailbox does not let its owner be picked')
             page.goto(f'{self.base}/odoo/action-{action}/{carrier["id"]}',
                       wait_until='domcontentloaded')
             page.wait_for_selector('.o_form_view', timeout=30000)
@@ -4528,7 +4533,7 @@ class Checks:
             step, dots, msgs = step_5()
             if any('o_mailpro_dot_attention' in d for d in dots):
                 self.fail('step 5 stays amber once a shared mailbox carries the system email')
-            if 'System email from a personal mailbox' in msgs:
+            if 'Personal mailbox' in msgs:
                 self.fail('step 5 still says personal once a shared mailbox carries it')
         finally:
             self.call('pan.mail.mailbox', 'write', [carrier['id']],
@@ -4646,65 +4651,71 @@ class Checks:
             quiet = marks()
             text = self.form_text(url)
             self.shot('mailbox-healthy.png')
-            # The status belongs to the address: it opens the line under it,
-            # in the same column. A badge half a 2000px window away from the
-            # address, at heading size, read as a second thing.
-            gap = self.page.evaluate("""() => {
-                const address = document.querySelector('.o_mailpro_mailbox_head h1 input');
-                const badge = document.querySelector('.o_mailpro_mailbox_meta .badge');
-                if (!address || !badge) return null;
-                return Math.abs(badge.getBoundingClientRect().left
-                                - address.getBoundingClientRect().left);
-            }""")
-            if gap is None:
-                self.fail('the mailbox form has no address with its status under it')
-            elif gap > 24:
-                self.fail(f'the status badge sits {gap:.0f}px from the address column')
-            # The status, the identity and the last check are one line.
-            # Odoo stretches every field under `.oe_title` to full width,
-            # which put them on three.
-            spread = self.page.evaluate("""() => {
-                const meta = document.querySelector('.o_mailpro_mailbox_meta');
-                if (!meta) return null;
-                const mids = [...meta.children]
-                    .filter(el => el.getClientRects().length)
-                    .map(el => { const r = el.getBoundingClientRect();
-                                 return (r.top + r.bottom) / 2; });
-                return Math.max(...mids) - Math.min(...mids);
-            }""")
-            if spread is not None and spread > 12:
-                self.fail('the line under the mailbox address breaks onto more than '
-                          f'one line ({spread:.0f}px between its parts)')
-            for gone in ('Sync Now', 'Send test email', 'Try again'):
+            # One status, said once, in the header (canvas 04).
+            badge = self.page.query_selector('.o_form_view .o_form_statusbar .o_mailpro_mailbox_status')
+            if not badge or 'Syncing' not in badge.inner_text():
+                self.fail('a mailbox that ran a moment ago does not say Syncing in its header: '
+                          + (badge.inner_text() if badge else 'no badge'))
+            if self.page.query_selector('.o_form_view .o_form_statusbar button.btn-primary'):
+                self.fail('the mailbox page has a primary button')
+            for gone in ('Sync Now', 'Send test email', 'Try again', 'Check Now',
+                         'Sign In as This Address', 'Sign in as this address'):
                 if gone in text:
-                    self.fail(f'a working mailbox still offers "{gone}"')
-            if 'Last checked' not in text:
-                self.fail('the mailbox form does not say when it was last checked')
+                    self.fail(f'the mailbox page still offers "{gone}"')
+            if self.page.query_selector('.o_form_view .o_mailpro_row_problem:visible'):
+                self.fail('a working mailbox shows a problem on a row')
+            if not self.page.query_selector('.o_form_view .o-mail-Chatter, .o_form_view .o-mail-ChatterContainer, .o-mail-Form-chatter'):
+                self.fail('the mailbox page has no chatter beside it')
 
-            # One page (#420): no tabs, no setup steps, and nothing that asks
-            # the reader to check the mailbox.
+            # One page (#420): no tabs, no setup steps.
             self.shot('mailbox-form.png')
             if self.page.query_selector('.o_form_view .o_notebook'):
                 self.fail('the mailbox form still has tabs')
             if self.page.query_selector('.o_form_view .o_mailpro_step'):
                 self.fail('the mailbox form still draws setup steps')
-            for gone in ('Check mailbox', 'Not tested'):
-                if gone in text:
-                    self.fail(f'the mailbox form still says "{gone}"')
             if 'Last synced' in text:
                 self.fail('the form still labels the fetch cursor "Last synced"')
 
+            # The Sync page: the same record, settings, the switch and runs.
+            self.page.click('.o_form_view button[name="action_open_sync"]')
+            self.page.wait_for_selector('.o_form_view.o_mailpro_mailbox_sync', timeout=30000)
+            self.page.wait_for_timeout(1000)
+            self.shot('mailbox-sync-page.png')
+            sync_text = self.page.inner_text('.o_form_view')
+            for word in ('Sync Level', 'Routing', 'Import From', 'Last Run', 'Next Run',
+                         'Run Now', 'Mail Log'):
+                if word not in sync_text:
+                    self.fail(f'the Sync page has no "{word}"')
+            if 'Replies follow their conversation' not in sync_text:
+                self.fail('the Sync page does not say where replies go')
+            crumbs = self.page.inner_text('.o_breadcrumb') if self.page.query_selector('.o_breadcrumb') else ''
+            if 'Sync' not in crumbs:
+                self.fail(f'the Sync page is not a level of its own in the breadcrumb: {crumbs!r}')
+            self.page.click('.o_form_view button[name="action_open_runs"]')
+            self.page.wait_for_selector('.o_list_view', timeout=30000)
+            self.page.wait_for_timeout(800)
+            self.shot('mailbox-runs.png')
+            row = self.page.query_selector('.o_list_view .o_data_row')
+            if row:
+                row.click()
+                self.page.wait_for_selector('.o_form_view', timeout=30000)
+                self.page.wait_for_timeout(800)
+                self.shot('mailbox-run.png')
+            self.error_free('the mailbox, its Sync page and its runs')
+
             # Stale: the heartbeat is old enough that nobody is reading this
-            # mailbox, with no error recorded anywhere. That combination used
-            # to be completely invisible on every screen in the module.
+            # mailbox, with no error recorded anywhere. The status says so in
+            # the header and the Sync row says it in red.
             self.call('pan.mail.mailbox', 'write', [mailbox_id],
                       {'last_check_date': '2020-01-01 00:00:00'})
-            text = self.form_text(url)
+            self.form_text(url)
             self.shot('mailbox-stale.png')
-            if 'Try again' not in text:
-                self.fail('a mailbox that stopped being read offers no way back')
-            if 'not being read' not in text:
-                self.fail('a mailbox that stopped being read does not say so')
+            badge = self.page.query_selector('.o_form_view .o_form_statusbar .o_mailpro_mailbox_status')
+            if not badge or 'Failing' not in badge.inner_text():
+                self.fail('a mailbox that stopped being read does not say Failing')
+            problem = self.page.query_selector('.o_form_view .o_mailpro_row_sync .o_mailpro_row_problem')
+            if not problem or not problem.is_visible():
+                self.fail('the Sync row of a mailbox that stopped being read shows no problem')
 
             loud = marks()
             if quiet is not None and loud is not None:
@@ -5372,13 +5383,15 @@ class Checks:
             if login not in text:
                 self.fail('My Preferences does not say which address the user is connected as')
 
-            # The same slider as the mailbox form, every stop clicked; it
+            # The sync level slider, every stop clicked; it
             # ends on the widest.
             if not self.sync_slider_walk(page, '.modal .o_form_view',
-                                         'x_pan_mail_sync_level', 'My Preferences'):
+                                         'x_pan_mail_sync_level', 'My Preferences',
+                                         shots={0: 'sync-slider-stop0-light.png',
+                                                3: 'sync-slider-stop3-light.png'}):
                 return
-            if 'newsletters' not in page.inner_text('.modal .o_form_view'):
-                self.fail('the widest rung is picked without saying what it lets in')
+            if 'newsletters' in page.inner_text('.modal .o_form_view'):
+                self.fail('My Preferences still carries the everyone warning')
             page.click('.modal button[name=preference_save]')
             page.wait_for_timeout(1500)
             dialog = page.query_selector('.o_error_dialog, .o_dialog_error')
@@ -5390,6 +5403,59 @@ class Checks:
                 self.fail(f'My Preferences saved, the mailbox still reads {level}')
         finally:
             page.context.close()
+        self.preferences_dark(login)
+
+    def preferences_dark(self, login):
+        """The slider in dark mode: every line of it, each row's detail
+        opened, clears 3:1. Its two ends are screenshot for the review."""
+        context = self.browser.new_context(viewport={'width': WIDE, 'height': 1100})
+        host = urllib.parse.urlparse(self.base).hostname
+        context.add_cookies([{'name': 'color_scheme', 'value': 'dark',
+                              'domain': host, 'path': '/'}])
+        dark = context.new_page()
+        root = '.modal .o_form_view .o_field_widget[name="x_pan_mail_sync_level"]'
+        try:
+            dark.goto(f'{self.base}/web/login', wait_until='domcontentloaded')
+            dark.fill('input[name=login]', login)
+            dark.fill('input[name=password]', login)
+            dark.click('button[type=submit]')
+            dark.wait_for_selector('.o_main_navbar', timeout=60000)
+            for _ in range(4):
+                dark.click('.o_main_navbar .o_user_menu')
+                try:
+                    dark.wait_for_selector(
+                        '.o-dropdown--menu .dropdown-item:has-text("Preferences")', timeout=4000)
+                    break
+                except Exception:
+                    dark.wait_for_timeout(500)
+            dark.click('.o-dropdown--menu .dropdown-item:has-text("Preferences")')
+            dark.wait_for_selector('.modal .o_form_view', timeout=30000)
+            dark.click('.modal .o_notebook .nav-link:has-text("Mail Pro")')
+            dark.wait_for_selector(f'{root} .o_mailpro_sync_level', timeout=15000)
+            scheme = dark.evaluate("() => getComputedStyle(document.documentElement)"
+                                   ".getPropertyValue('--o-webclient-color-scheme').trim()")
+            if scheme != 'dark':
+                self.fail(f'the dark bundle did not load for the slider ({scheme!r})')
+                return
+            for stop, name in ((0, 'sync-slider-stop0-dark.png'),
+                               (3, 'sync-slider-stop3-dark.png')):
+                dark.click(f'{root} .o_mailpro_sync_stop[data-stop="{stop}"]')
+                dark.wait_for_timeout(600)
+                if self.out:
+                    dark.locator(root).screenshot(path=os.path.join(self.out, name))
+            for dot in dark.query_selector_all(f'{root} .o_mailpro_sync_info'):
+                dot.click()
+            dark.wait_for_timeout(300)
+            if self.out:
+                dark.locator(root).screenshot(
+                    path=os.path.join(self.out, 'sync-slider-details-dark.png'))
+            low = dark.evaluate(self.LOW_CONTRAST_JS, [3, f'{root} .o_mailpro_sync_level'])
+            if low:
+                lines = '; '.join(f"{item['text']!r} ({item['cls']}) {item['ratio']}:1"
+                                  for item in low[:8])
+                self.fail(f'dark mode: {len(low)} line(s) of the sync slider below 3:1 -- {lines}')
+        finally:
+            context.close()
 
     # The four stops, their names under the slider and the full labels a
     # screen reader hears (`sync_level`'s selection).
@@ -5574,83 +5640,62 @@ class Checks:
         return True
 
     def sync_slider(self):
-        """The sync level on the mailbox form is a slider over what reaches
-        Odoo (#390, #419), in light and in dark.
-
-        Every stop is clicked and the grid read back, the widest is saved and
-        lands on the row, and in dark mode every line of it, each row's
-        detail opened, clears 3:1. The slider at its two ends is screenshot
-        in both schemes for the review.
-        """
+        """The Sync page has one Sync Level row; it opens the Sync Level page,
+        the same slider and grid as My Preferences: every stop walked, the
+        widest saved, no warning under it. Dark-mode contrast is checked on My
+        Preferences (`preferences_dark`)."""
         action = dict(module_menu_actions(self.call)).get('Mailboxes')
         rows = self.call('pan.mail.mailbox', 'search_read',
                          [('is_notification_mailbox', '=', False)],
                          fields=['sync_level', 'state'], limit=1)
         if not action or not rows:
-            self.fail('no mailbox to show the sync level slider on')
+            self.fail('no mailbox to show the sync level on')
             return
         mailbox, was = rows[0]['id'], rows[0]
-        url = f'{self.base}/odoo/action-{action}/{mailbox}'
         page = self.page
         try:
-            page.goto(url, wait_until='domcontentloaded')
-            page.wait_for_selector('.o_form_view .o_field_widget[name="sync_level"]',
+            page.goto(f'{self.base}/odoo/action-{action}/{mailbox}', wait_until='domcontentloaded')
+            page.wait_for_selector('.o_form_view button[name="action_open_sync"]', timeout=30000)
+            page.click('.o_form_view button[name="action_open_sync"]')
+            # One Sync Level row on the Sync page, no slider there.
+            page.wait_for_selector('.o_form_view button[name="action_open_sync_level"]',
                                    timeout=30000)
+            if page.query_selector('.o_form_view .o_mailpro_sync_level'):
+                self.fail('the Sync page draws the slider inline; it is a page of its own')
+            self.shot('mailbox-sync-page.png')
+            page.click('.o_form_view button[name="action_open_sync_level"]')
+            page.wait_for_selector(
+                '.o_form_view .o_field_widget[name="sync_level"] .o_mailpro_sync_level',
+                timeout=30000)
             page.wait_for_timeout(600)
-            if not self.sync_slider_walk(
-                    page, '.o_form_view', 'sync_level', 'the mailbox form',
-                    shots={0: 'sync-slider-stop0-light.png',
-                           3: 'sync-slider-stop3-light.png'}):
+            crumbs = page.inner_text('.o_breadcrumb')
+            if 'Sync Level' not in crumbs or 'Sync' not in crumbs.replace('Sync Level', ''):
+                self.fail(f'the Sync Level page breadcrumb reads {crumbs!r}')
+            # The same slider and grid as My Preferences, every stop
+            # clicked; it ends on the widest.
+            if not self.sync_slider_walk(page, '.o_form_view', 'sync_level', 'the Sync Level page',
+                                         shots={3: 'mailbox-sync-slider.png'}):
                 return
-            self.shot('mailbox-sync-slider.png')
-            if 'newsletters' not in page.inner_text('.o_form_view .o_form_sheet'):
-                self.fail('the widest stop is picked without saying what it lets in')
+            if 'newsletters' in page.inner_text('.o_form_view .o_form_sheet'):
+                self.fail('the widest level still carries the everyone warning')
             page.click('.o_form_button_save')
             page.wait_for_timeout(1500)
-            self.error_free('saving the sync level slider')
+            self.error_free('saving the sync level')
+            # Back on the Sync page, the widest level offers a team.
+            page.click('.o_breadcrumb .breadcrumb-item:has-text("Sync") a, '
+                       '.o_breadcrumb a:text-is("Sync")')
+            page.wait_for_selector('.o_form_view button[name="action_open_sync_level"]',
+                                   timeout=30000)
+            if self.visible('.o_form_view .o_field_widget[name="alias_id"]') is False:
+                self.fail('the widest level offers no team to route to')
+            self.shot('mailbox-sync-routing.png')
             level = self.call('pan.mail.mailbox', 'read', [mailbox],
                               fields=['sync_level'])[0]['sync_level']
             if level != 'everyone':
-                self.fail(f'the mailbox form saved the last stop, the mailbox reads {level}')
+                self.fail(f'the Sync page saved the widest level, the mailbox reads {level}')
         finally:
             self.call('pan.mail.mailbox', 'write', [mailbox],
                       {'sync_level': was['sync_level'], 'state': was['state']})
-
-        context = self.browser.new_context(viewport={'width': WIDE, 'height': 1100})
-        host = urllib.parse.urlparse(self.base).hostname
-        context.add_cookies([{'name': 'color_scheme', 'value': 'dark',
-                              'domain': host, 'path': '/'}])
-        dark = context.new_page()
-        root = '.o_form_view .o_field_widget[name="sync_level"]'
-        try:
-            login(dark, self.base)
-            dark.goto(url, wait_until='domcontentloaded')
-            dark.wait_for_selector(f'{root} .o_mailpro_sync_level', timeout=15000)
-            scheme = dark.evaluate("() => getComputedStyle(document.documentElement)"
-                                   ".getPropertyValue('--o-webclient-color-scheme').trim()")
-            if scheme != 'dark':
-                self.fail(f'the dark bundle did not load for the slider ({scheme!r})')
-                return
-            for stop, name in ((0, 'sync-slider-stop0-dark.png'),
-                               (3, 'sync-slider-stop3-dark.png')):
-                dark.click(f'{root} .o_mailpro_sync_stop[data-stop="{stop}"]')
-                dark.wait_for_timeout(600)
-                if self.out:
-                    dark.locator(root).screenshot(path=os.path.join(self.out, name))
-            for dot in dark.query_selector_all(f'{root} .o_mailpro_sync_info'):
-                dot.click()
-            dark.wait_for_timeout(300)
-            if self.out:
-                dark.locator(root).screenshot(
-                    path=os.path.join(self.out, 'sync-slider-details-dark.png'))
-            low = dark.evaluate(self.LOW_CONTRAST_JS, [3, f'{root} .o_mailpro_sync_level'])
-            if low:
-                lines = '; '.join(f"{item['text']!r} ({item['cls']}) {item['ratio']}:1"
-                                  for item in low[:8])
-                self.fail(f'dark mode: {len(low)} line(s) of the sync slider below 3:1 -- {lines}')
-        finally:
-            context.close()
-
     def error_free(self, where):
         dialog = self.page.query_selector('.o_error_dialog, .o_dialog_error')
         if dialog:

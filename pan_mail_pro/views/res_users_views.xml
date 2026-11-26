@@ -97,12 +97,6 @@
                         <label for="x_pan_mail_sync_level"/>
                         <div>
                             <field name="x_pan_mail_sync_level" widget="mailpro_sync_level" nolabel="1"/>
-                            <div class="alert alert-warning mt-2 mb-0" role="alert"
-                                 invisible="x_pan_mail_sync_level != 'everyone'">
-                                Every sender becomes a contact in Odoo, newsletters
-                                and private email included. Pick this only for an
-                                address that exists to hear from new contacts.
-                            </div>
                         </div>
                     </group>
                 </page>
@@ -181,12 +175,6 @@
                         <label for="x_pan_mail_sync_level"/>
                         <div>
                             <field name="x_pan_mail_sync_level" widget="mailpro_sync_level" nolabel="1"/>
-                            <div class="alert alert-warning mt-2 mb-0" role="alert"
-                                 invisible="x_pan_mail_sync_level != 'everyone'">
-                                Every sender becomes a contact in Odoo, newsletters
-                                and private email included. Pick this only for an
-                                address that exists to hear from new contacts.
-                            </div>
                         </div>
                     </group>
                 </page>

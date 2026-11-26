@@ -96,6 +96,10 @@ not a group.
 Signed in as anybody else, Mail Pro stores nothing and says which address it
 expected. Only a mailbox manager sees the button.
 
+The same goes for the notification mailbox. An `accounts@` that carries
+Odoo's system email is signed in as `accounts@`, whoever its **Owner** is:
+a Google sign-in reads and sends its own mailbox and no other.
+
 ## Next Steps
 
 Proceed to [User Setup](user-setup.md) to connect accounts.

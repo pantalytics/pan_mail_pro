@@ -209,6 +209,45 @@ class TestGoogleProvider(TransactionCase):
         self.assertEqual(
             mailbox._get_client().resolve_receiving_account(mailbox), account)
 
+    def test_notification_mailbox_on_another_address_is_its_own_sign_in(self):
+        """Dorset, 19 Nov: accounts@ carried the system email, owned by a
+        person signed in to Google as herself. Her token read her own inbox
+        under accounts@'s name and sent as her. On Gmail a token reaches its
+        own mailbox only, so the owner's serves only its own address, and
+        the screens ask for a sign-in as accounts@ and call it shared."""
+        self._google_account(refresh_token='owner-refresh')
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'accounts@test.local', 'provider': 'gmail',
+            'owner_user_id': self.user.id, 'is_notification_mailbox': True,
+        })
+        client = mailbox._get_client()
+        self.assertFalse(client.resolve_receiving_account(mailbox))
+        self.assertFalse(client.resolve_sending_account(mailbox))
+        self.assertFalse(mailbox._has_working_credentials())
+        self.assertTrue(mailbox.signs_in_as_itself)
+        self.assertIn('Sign in to Gmail as accounts@test.local', mailbox._no_credentials_error())
+
+        service = self.Account.create({
+            'email': 'Accounts@test.local', 'provider': 'gmail', 'user_id': False,
+            'refresh_token': 'service-refresh',
+        })
+        mailbox.invalidate_recordset()
+        self.assertEqual(client.resolve_receiving_account(mailbox), service)
+        self.assertEqual(client.resolve_sending_account(mailbox), service)
+        mailbox.sudo().write({'address_kind': 'user'})
+        self.assertEqual(mailbox.provider_type, 'shared',
+                         'Google calls it a user; nobody\'s sign-in is behind it')
+
+    def test_the_owner_s_own_address_stays_personal(self):
+        self._google_account(refresh_token='owner-refresh')
+        mailbox = self.env['pan.mail.mailbox'].create({
+            'email': 'gmail_user@test.local', 'provider': 'gmail',
+            'owner_user_id': self.user.id, 'is_notification_mailbox': True,
+        })
+        mailbox.sudo().write({'address_kind': 'user'})
+        self.assertFalse(mailbox.signs_in_as_itself)
+        self.assertEqual(mailbox.provider_type, 'personal')
+
     # ------------------------------------------------------------------ #
     # OAuth flow — connect, store, connected flag, disconnect
     # ------------------------------------------------------------------ #
