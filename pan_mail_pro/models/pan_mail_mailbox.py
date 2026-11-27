@@ -39,6 +39,25 @@ READ_STATE_TTL = 60
 # five minutes is still inside this window.
 STALE_AFTER_MINUTES = 15
 
+# How often a run that read nothing may write the mailbox row (#471). The
+# fetch cron runs every minute, and its write on every mailbox every minute
+# collided with Cloudpepper's `-u`, which runs next to the live Odoo: the
+# upgrade's own UPDATE on the table failed to serialize and rolled back. An
+# idle mailbox now moves its heartbeat and its empty folders' cursors once in
+# this many minutes, well inside STALE_AFTER_MINUTES, the way Odoo's own
+# fetchmail writes its date every five. A run that changes anything else
+# (mail read, an error cleared, a stopped sync resumed) still writes at once.
+IDLE_WRITE_EVERY_MINUTES = 5
+
+def idle_write_due(stamp):
+    """Has `stamp` (a heartbeat or a cursor) gone IDLE_WRITE_EVERY_MINUTES
+    without a write? An empty one always has."""
+    if not stamp:
+        return True
+    age = fields.Datetime.now() - stamp
+    return age.total_seconds() >= IDLE_WRITE_EVERY_MINUTES * 60
+
+
 # How often the sync cron asks the provider what a mailbox is and whether the
 # sign-in may read it. The inbox probe is a call the sync makes anyway; the
 # two behind it are two GETs an hour, which is nothing against a one-minute
@@ -861,7 +880,7 @@ class PanMailMailbox(models.Model):
         apart.
         """
         self.ensure_one()
-        vals = {'last_check_date': fields.Datetime.now()}
+        vals = {}
         if self.sync_status == 'stopped':
             # A run that went through (Run Now) resumes a stopped sync.
             vals['sync_enabled'] = True
@@ -871,7 +890,11 @@ class PanMailMailbox(models.Model):
             vals['error_message'] = False
         if self.sync_failure_count:
             vals['sync_failure_count'] = 0
-        if vals:
+        # The heartbeat moves with any other change, and on its own only once
+        # it is IDLE_WRITE_EVERY_MINUTES old (#471): an idle mailbox is
+        # written once in five minutes rather than every minute.
+        if vals or idle_write_due(self.last_check_date):
+            vals['last_check_date'] = fields.Datetime.now()
             self.write(vals)
 
     # -------------------------------------------------------------------------

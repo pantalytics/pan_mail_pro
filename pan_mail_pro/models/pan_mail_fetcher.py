@@ -24,6 +24,8 @@ from .mail_provider_client import (
 )
 from .mail_message import READ_MIRROR_CTX
 from .neutralization import database_is_copy
+from .ir_http import warn_if_schema_behind
+from .pan_mail_mailbox import idle_write_due
 from .pan_mail_sync_run import RUN_CTX
 
 _logger = logging.getLogger(__name__)
@@ -130,6 +132,11 @@ class PanMailFetcher(models.AbstractModel):
         Cron method to fetch emails from all enabled mailboxes.
         Called by ir.cron every 1 minute.
         """
+        # First of all: code pulled and `-u` not run yet (#280). Every read
+        # below would raise on the missing column, a traceback a minute; one
+        # warning that names the fix instead, and nothing else this run.
+        if warn_if_schema_behind(self.env, _logger, 'Incoming Mail'):
+            return
         # Before every other gate: during setup there are no mailboxes and the
         # setup gate returns, and setup is exactly when a first heartbeat can
         # meet a bad minute. The retry must not wait for a state it unblocks.
@@ -376,10 +383,13 @@ class PanMailFetcher(models.AbstractModel):
                 # folder is caught up, so it jumps to now() -- but not when it
                 # stalled on its first message: that jump is exactly the skip
                 # the stall prevents, and `_fetch_folder` hands back the cursor
-                # it was holding instead.
-                cursors[folder] = cursor or (
-                    None if stalled_on is not None else fields.Datetime.now()
-                )
+                # it was holding instead. And only once its own cursor is
+                # IDLE_WRITE_EVERY_MINUTES old (#471): the jump is a write on
+                # the mailbox row, and the cron runs every minute.
+                if cursor is None and stalled_on is None and idle_write_due(
+                        mailbox[FOLDER_CURSOR_FIELDS[folder]]):
+                    cursor = fields.Datetime.now()
+                cursors[folder] = cursor
 
         self._write_folder_cursors(mailbox, cursors)
 
@@ -408,10 +418,14 @@ class PanMailFetcher(models.AbstractModel):
 
     @staticmethod
     def _write_folder_cursors(mailbox, cursors):
-        """Store each folder's progress. A `None` holds that folder where it is."""
+        """Store each folder's progress. A `None` holds that folder where it
+        is, and so does a cursor that did not move: a provider whose `since`
+        is inclusive hands the newest message back every run, and writing
+        the same date again is still a write on the mailbox row (#471)."""
         moved = {
             FOLDER_CURSOR_FIELDS[folder]: cursor
-            for folder, cursor in cursors.items() if cursor
+            for folder, cursor in cursors.items()
+            if cursor and cursor != mailbox[FOLDER_CURSOR_FIELDS[folder]]
         }
         if moved:
             mailbox.write(moved)

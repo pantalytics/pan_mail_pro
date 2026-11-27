@@ -4,8 +4,9 @@ Unit tests for Microsoft Incoming Mail Processor.
 
 Run with: python -m odoo -d test_db --test-enable --test-tags=pan_mail_pro
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
+from odoo import fields
 from odoo.tests import TransactionCase, tagged
 from odoo.tools import mute_logger
 import unittest
@@ -16,8 +17,10 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     ThrottledError,
 )
 from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import INTERNAL_DOMAINS_CTX
-from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import SYNC_FAILURE_LIMIT
-from odoo.addons.pan_mail_pro.tests.common import MailProTestCase
+from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import (
+    IDLE_WRITE_EVERY_MINUTES, SYNC_FAILURE_LIMIT,
+)
+from odoo.addons.pan_mail_pro.tests.common import MailProTestCase, mailbox_writes
 
 
 
@@ -882,6 +885,43 @@ class TestPerFolderCursor(MailProTestCase):
                            datetime(2026, 9, 1))
         self.assertEqual(self.mailbox.last_sync_date,
                          datetime(2026, 5, 12, 10, 0))
+
+    def test_an_idle_folder_inside_the_window_holds_its_cursor(self):
+        """#471: the jump to now() is a write on the mailbox row, so an empty
+        folder whose cursor moved less than IDLE_WRITE_EVERY_MINUTES ago stays
+        put. One older than that still jumps (the test above)."""
+        recent = fields.Datetime.now() - timedelta(minutes=IDLE_WRITE_EVERY_MINUTES - 1)
+        self.mailbox.write({'last_sent_sync_date': recent})
+
+        self._sync({FOLDER_INBOX: [self._msg(1, datetime(2026, 5, 12, 10, 0))]})
+
+        self.assertEqual(self.mailbox.last_sent_sync_date, recent)
+
+    def test_an_idle_run_inside_the_window_writes_no_mailbox(self):
+        """#471: the cron wrote every mailbox every minute, and that write
+        collided with Cloudpepper's `-u` (Juffermans, 26-11). A run with no
+        new mail inside the window, including one that only sees the newest
+        message again, leaves the row alone; mail that arrives still moves
+        the cursor at once."""
+        now = fields.Datetime.now()
+        inbox = now - timedelta(minutes=1)
+        self.mailbox.write({
+            'last_sync_date': inbox,
+            'last_sent_sync_date': now - timedelta(minutes=2),
+            'last_check_date': now - timedelta(minutes=1),
+            'state': 'active', 'error_message': False, 'sync_failure_count': 0,
+        })
+
+        with mailbox_writes(self.mailbox) as written:
+            self._sync({})
+            self._sync({FOLDER_INBOX: [self._msg(1, inbox)]})
+            self.mailbox._record_sync_success()
+        self.assertEqual(written, [], 'an idle run wrote the mailbox')
+
+        arrived = now
+        self._sync({FOLDER_INBOX: [self._msg(2, arrived)]})
+        self.assertEqual(self.mailbox.last_sync_date, arrived,
+                         'new mail did not move the cursor')
 
     def test_rewinding_the_start_date_rewinds_both_cursors(self):
         self.mailbox.write({

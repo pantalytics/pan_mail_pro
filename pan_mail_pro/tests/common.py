@@ -176,6 +176,23 @@ def send_and_capture(mails):
     return None
 
 
+@contextlib.contextmanager
+def mailbox_writes(mailbox):
+    """Collect the field names of every write that touches `mailbox`: how a
+    test checks that an idle run leaves the mailbox row alone (#471)."""
+    Mailbox = type(mailbox)
+    original = Mailbox.write
+    written = []
+
+    def write(records, vals):
+        if records & mailbox:
+            written.append(sorted(vals))
+        return original(records, vals)
+
+    with patch.object(Mailbox, 'write', write):
+        yield written
+
+
 class MailProTestCase(TransactionCase):
     """Common setUp for routing + composer tests."""
 
