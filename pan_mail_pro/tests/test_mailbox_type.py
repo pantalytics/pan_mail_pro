@@ -13,7 +13,6 @@ first check and the notification flag never counting (#371).
 Notification is exactly one mailbox: ticking one moves it, unticking the
 last is refused.
 """
-from odoo import fields
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -112,8 +111,7 @@ class TestTypeIsTheProviders(MailProTestCase):
     def test_each_kind_once_checked(self):
         mailbox = self.personal_mailbox
         for kind, _label in ADDRESS_KINDS:
-            mailbox.write({'address_kind': kind,
-                           'access_checked_date': fields.Datetime.now()})
+            mailbox.write({'address_kind': kind})
             expected = ADDRESS_KIND_TYPES.get(kind) or (
                 'personal' if kind == 'unknown' else False)
             self.assertEqual(mailbox.provider_type, expected, 'address_kind %s' % kind)
@@ -127,8 +125,7 @@ class TestTypeIsTheProviders(MailProTestCase):
         mailbox = self.notification_mailbox
         self.assertEqual(mailbox.mailbox_type, 'personal')
         self.assertEqual(mailbox.provider_type, 'shared')
-        mailbox.write({'address_kind': 'shared',
-                       'access_checked_date': fields.Datetime.now()})
+        mailbox.write({'address_kind': 'shared'})
         self.assertEqual(mailbox.provider_type, 'shared')
         self.assertIn('Shared mailbox', mailbox.subtitle)
 
@@ -139,8 +136,7 @@ class TestTypeIsTheProviders(MailProTestCase):
             'owner_user_id': self.salesperson.id,
         })
         self.assertEqual(mailbox.provider_type, 'shared')
-        mailbox.write({'address_kind': 'user',
-                       'access_checked_date': fields.Datetime.now()})
+        mailbox.write({'address_kind': 'user'})
         self.assertEqual(mailbox.provider_type, 'personal')
         self.assertEqual(mailbox.mailbox_type, 'shared')
 
@@ -148,8 +144,7 @@ class TestTypeIsTheProviders(MailProTestCase):
         """A grant without MailboxSettings.Read leaves the kind unknown after
         the check; the Type must not go blank for an own-app customer."""
         mailbox = self.personal_mailbox
-        mailbox.write({'address_kind': 'unknown',
-                       'access_checked_date': fields.Datetime.now()})
+        mailbox.write({'address_kind': 'unknown'})
         self.assertEqual(mailbox.provider_type, 'personal')
         self.assertEqual(self.shared_mailbox.provider_type, 'shared')
 

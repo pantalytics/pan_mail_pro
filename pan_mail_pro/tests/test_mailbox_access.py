@@ -390,6 +390,34 @@ class TestAccessTable(MailProTestCase):
         self.assertTrue(account.verified_date)
         self.assertEqual(len(mailbox.access_ids), 1)
 
+    def test_a_check_that_learns_nothing_new_writes_no_mailbox(self):
+        """#471: the hourly check wrote the mailbox row every hour. Its run
+        is the timestamp; the row moves only when the kind did."""
+        mailbox = self.shared_mailbox
+        account = self.salesperson.x_pan_mail_account_ids
+        answer = self._answer(kind='shared', can_read='yes')
+        with patch(f'{GRAPH_CLIENT}.inspect_mailbox', return_value=answer):
+            mailbox._verify_access(account)
+        first = mailbox.access_checked_date
+
+        Mailbox = type(mailbox)
+        original = Mailbox.write
+        written = []
+
+        def write(records, vals):
+            if records & mailbox:
+                written.append(sorted(vals))
+            return original(records, vals)
+
+        with patch(f'{GRAPH_CLIENT}.inspect_mailbox', return_value=answer), \
+                patch.object(Mailbox, 'write', write):
+            mailbox._verify_access(account)
+
+        self.assertEqual(written, [], 'an unchanged check wrote the mailbox')
+        mailbox.invalidate_recordset()
+        self.assertGreaterEqual(mailbox.access_checked_date, first)
+        self.assertFalse(mailbox._access_check_due())
+
     def test_a_refusal_is_a_ledger_row_naming_the_pair(self):
         mailbox = self.shared_mailbox
         account = self.salesperson.x_pan_mail_account_ids

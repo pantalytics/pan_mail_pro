@@ -307,9 +307,30 @@ class PanMailMailbox(models.Model):
     access_ids = fields.One2many(
         'pan.mail.mailbox.access', 'mailbox_id', string='Access',
         help='What each sign-in may do with this mailbox, as the provider last said.')
+    # Read from the access check's own run, like `last_check_date` (#471):
+    # the hourly check used to write the mailbox row every hour for nothing.
     access_checked_date = fields.Datetime(
-        string='Access checked', readonly=True, copy=False,
+        string='Access checked', compute='_compute_access_checked_date',
         help='When the access check last asked the provider about this mailbox.')
+
+    @api.depends('run_ids.state', 'run_ids.started', 'run_ids.kind')
+    def _compute_access_checked_date(self):
+        """The start of the newest access check that finished, either way.
+
+        A check the provider refused counts too: it is asked again in an
+        hour, not every minute.
+        """
+        last = {}
+        if self.ids:
+            last = {
+                mailbox.id: started
+                for mailbox, started in self.env['pan.mail.sync.run'].sudo()._read_group(
+                    [('mailbox_id', 'in', self.ids), ('kind', '=', 'access_check'),
+                     ('state', '!=', 'running')],
+                    ['mailbox_id'], ['started:max'])
+            }
+        for record in self:
+            record.access_checked_date = last.get(record.id, False)
 
     def _access_check_due(self):
         """Once an hour, and at once on a mailbox never checked."""
@@ -349,13 +370,13 @@ class PanMailMailbox(models.Model):
                     or answer['kind'] in ('none', 'resource') else None)
 
         now = fields.Datetime.now()
-        vals = {'access_checked_date': now}
         # The kind is the address's, whichever sign-in asked; a sign-in that
         # was refused at the door learned nothing about it, so `unknown`
         # from a refusal does not overwrite what an earlier check found.
-        if answer['kind'] != 'unknown' or self.address_kind == 'unknown':
-            vals['address_kind'] = answer['kind']
-        self.sudo().write(vals)
+        # Written only when it changed: the run is the timestamp (#471).
+        if (answer['kind'] != 'unknown' or self.address_kind == 'unknown') \
+                and answer['kind'] != self.address_kind:
+            self.sudo().write({'address_kind': answer['kind']})
         account.sudo().write({'verified_date': now})
         row = Access.note_check(self, account, answer)
 
@@ -856,7 +877,7 @@ class PanMailMailbox(models.Model):
                 subtype_xmlid='mail.mt_comment',
             )
 
-    @api.depends('run_ids.state', 'run_ids.started')
+    @api.depends('run_ids.state', 'run_ids.started', 'run_ids.kind')
     def _compute_last_check_date(self):
         """The start of the newest incoming run that finished.
 

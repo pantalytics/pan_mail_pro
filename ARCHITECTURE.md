@@ -1977,7 +1977,8 @@ a mailbox syncing every minute. `last_check_date` is the run itself: computed
 from the newest finished incoming `pan.mail.sync.run`, which every pass writes
 anyway, including the great majority that read nothing. It is not stored on the
 mailbox, so a quiet run leaves the mailbox row alone (#471), and the runs'
-vacuum keeps each mailbox's newest finished run whatever its age. It is the only field that can tell a quiet mailbox from a
+vacuum keeps each mailbox's newest finished run whatever its age. The hourly
+access check's `access_checked_date` is read the same way, from its own run. It is the only field that can tell a quiet mailbox from a
 stopped one, which is the failure the module could not see before: Odoo
 deactivates a cron that keeps hitting its time limit, and until then that
 showed up as mail not arriving, on a form whose every indicator still read OK.
