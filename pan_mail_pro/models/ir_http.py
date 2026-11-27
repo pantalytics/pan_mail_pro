@@ -38,6 +38,50 @@ _logger = logging.getLogger(__name__)
 
 SCHEMA_BEHIND = (errors.UndefinedTable, errors.UndefinedColumn)
 
+
+def missing_columns(env):
+    """The stored fields this module declares that the database has no
+    column for yet: the code was pulled and `-u pan_mail_pro` has not run.
+
+    The crons ask before they read anything (#280). Their first ORM read of a
+    model with a missing column would raise `UndefinedColumn` and leave a
+    traceback in the log every minute until somebody upgrades; asking first
+    is one query, and leaves the cron's transaction clean to say why.
+    """
+    # What the code declares changes only with the registry, so it is worked
+    # out once per registry; `mail.mail.send` asks on every send.
+    wanted = getattr(env.registry, '_pan_mail_stored_columns', None)
+    if wanted is None:
+        wanted = {}
+        for model in env.registry.values():
+            if model._abstract or not model._auto:
+                continue
+            for field in model._fields.values():
+                if field.store and field.column_type and field._module == 'pan_mail_pro':
+                    wanted.setdefault(model._table, set()).add(field.name)
+        env.registry._pan_mail_stored_columns = wanted
+    if not wanted:
+        return []
+    env.cr.execute("""
+        SELECT table_name, column_name
+          FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name IN %s
+    """, [tuple(wanted)])
+    have = set(env.cr.fetchall())
+    return sorted(f'{table}.{column}' for table, columns in wanted.items()
+                  for column in columns if (table, column) not in have)
+
+
+def warn_if_schema_behind(env, logger, flow):
+    """True, after one warning, when the database is behind the code."""
+    missing = missing_columns(env)
+    if missing:
+        logger.warning(
+            "[%s] The database is behind the code (%s missing): run -u "
+            "pan_mail_pro. Paused until then.", flow, ', '.join(missing[:5])
+            + (', ...' if len(missing) > 5 else ''))
+    return bool(missing)
+
 # What a request may end in on purpose: a refusal, a validation message, a
 # redirect. None of them is a defect, and recording them would bury the ones
 # that are under every "not connected" the Inbox answers.
