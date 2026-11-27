@@ -223,6 +223,11 @@ jobs:
 
       - name: Install Playwright
         run: |
+          # The runner image ships Microsoft's apt repository, which started
+          # answering 403 on 2026-11-27 and fails the `apt-get update` that
+          # --with-deps runs. Chromium's libraries come from Ubuntu's own.
+          sudo grep -rl packages.microsoft.com /etc/apt/sources.list.d \
+            | xargs -r sudo rm -f
           pip install playwright==1.62.0
           playwright install --with-deps chromium
 
