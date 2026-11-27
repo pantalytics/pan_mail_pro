@@ -41,9 +41,11 @@ class TestCronSchemaBehind(TransactionCase):
         """Without the check, the cron's reads do raise: the case is not
         stood in, it is the one Juffermans and odoo.pantalytics.com had."""
         self._behind()
-        with self.assertRaises(errors.UndefinedColumn), self.assertLogs('odoo.sql_db', 'ERROR'), \
-                self.env.cr.savepoint():
-            self.env['pan.mail.mailbox'].search([]).mapped('sync_enabled')
+        # The bad query is the point; caught here so the log stays clean for
+        # tools/ci_assert_tests.sh.
+        with self.assertRaises(errors.UndefinedColumn), \
+                self.assertLogs('odoo.sql_db', 'ERROR'), self.env.cr.savepoint():
+            self.env['pan.mail.mailbox'].search_count([('sync_enabled', '=', True)])
 
     def test_the_fetch_cron_warns_once_and_reads_nothing(self):
         self._behind()
@@ -90,8 +92,10 @@ class TestCronSchemaBehind(TransactionCase):
 PER_REQUEST_COLUMNS = {
     'res.users': {'x_default_mailbox_id', 'x_pan_mail_connected',
                   'x_pan_mail_connected_as', 'x_pan_mail_oauth_state'},
-    'res.partner': set(),
-    'mail.message': set(),
+    'res.partner': {'x_email_sync_blocked'},
+    'mail.message': {'x_account_id', 'x_direction', 'x_email_cc', 'x_email_to',
+                     'x_is_read', 'x_mailbox_id', 'x_provider_message_id',
+                     'x_provider_thread_id', 'x_res_model_id'},
 }
 
 
