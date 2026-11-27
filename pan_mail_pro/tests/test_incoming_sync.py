@@ -22,7 +22,7 @@ from odoo.addons.pan_mail_pro.models import pan_mail_fetcher as fetcher_mod
 from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import FETCH_BATCH_SIZE, odoo_db_marker
 from odoo.addons.pan_mail_pro.models.providers.microsoft import graph_client as graph_mod
 
-from .common import MailProTestCase
+from .common import MailProTestCase, checked_at
 from odoo.addons.pan_mail_pro.compat import attachment_bytes
 
 GRAPH = 'https://graph.microsoft.com/v1.0'
@@ -64,9 +64,14 @@ class TestCronProgress(MailProTestCase):
         self.assertTrue(all(c.kwargs['processed'] == 1 for c in progress.call_args_list[1:]))
 
     def test_the_stalest_mailbox_goes_first(self):
-        self.shared_mailbox.last_sync_date = '2026-01-01 00:00:00'
-        self.personal_mailbox.last_sync_date = '2026-02-01 00:00:00'
-        self.notification_mailbox.last_sync_date = False
+        """Stalest is the oldest check, not the oldest cursor: a quiet
+        mailbox's cursor stands still (#471), so the busy one, whose cursor is
+        newest, would otherwise go last on every run."""
+        self.shared_mailbox.last_sync_date = '2026-03-01 00:00:00'
+        self.personal_mailbox.last_sync_date = '2026-01-01 00:00:00'
+        checked_at(self.shared_mailbox, '2026-01-01 00:00:00')
+        checked_at(self.personal_mailbox, '2026-02-01 00:00:00')
+        checked_at(self.notification_mailbox, False)
         process, _progress = self._run({'ir_cron_progress_id': 1})
         self.assertEqual(
             [c.args[0] for c in process.call_args_list],

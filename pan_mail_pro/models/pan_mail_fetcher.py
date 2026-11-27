@@ -221,8 +221,11 @@ class PanMailFetcher(models.AbstractModel):
         # there is nothing to gain by returning early on that number.)
         cron = self.env['ir.cron']
         in_cron = bool(self.env.context.get('ir_cron_progress_id'))
+        # Stalest is the oldest check, not the oldest cursor: a quiet
+        # mailbox's cursor stands still now (#471), and sorting on it would
+        # put the busiest mailbox last on every run.
         mailboxes = mailboxes.sorted(
-            key=lambda m: m.last_sync_date or datetime.min)
+            key=lambda m: m.last_check_date or datetime.min)
         if in_cron:
             cron._commit_progress(remaining=len(mailboxes))
 
