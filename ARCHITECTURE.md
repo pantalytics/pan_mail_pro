@@ -1964,15 +1964,20 @@ Stripe webhooks use:
    and it stops at the first one that raised — the rest of the batch is still
    read, but the cursor does not pass the failure
 4. If a folder came back empty, *its* cursor jumps to `now()` — caught up. Not
-   when it stalled: that jump is exactly the skip the stall prevents
+   when it stalled: that jump is exactly the skip the stall prevents. And
+   only once its cursor is `IDLE_WRITE_EVERY_MINUTES` (5) old: the jump is a
+   write on the mailbox row, and a write on every mailbox every minute
+   collided with Cloudpepper's `-u`, which runs next to the live Odoo, and
+   rolled the upgrade back (#471). A cursor that did not move is not written
 
 **A cursor is not a heartbeat.** Both cursors answer "when did mail last
 arrive", and on a quiet mailbox both stand still for as long as nobody writes
 in. Nothing on the model answered "when did we last look", so the form showed
 `last_sync_date` under the label *Last synced* and read half an hour behind on
 a mailbox syncing every minute. `last_check_date` is the run itself, written by
-`_record_sync_success()` on every completed pass including the great majority
-that read nothing. It is the only field that can tell a quiet mailbox from a
+`_record_sync_success()` on a completed pass: at once when anything else on the
+mailbox changes, and otherwise once in `IDLE_WRITE_EVERY_MINUTES` (#471), well
+inside the fifteen minutes after which it reads as stale. It is the only field that can tell a quiet mailbox from a
 stopped one, which is the failure the module could not see before: Odoo
 deactivates a cron that keeps hitting its time limit, and until then that
 showed up as mail not arriving, on a form whose every indicator still read OK.
@@ -3534,6 +3539,33 @@ What the move guarantees is that nothing stops in between.
   button and no count on any screen (#369); never before the last account
   has left.
 
+### 9.21 Code ahead of the database
+
+Cloudpepper and Odoo.sh restart on new code before `-u pan_mail_pro` has run,
+or without it (#134), and Cloudpepper runs that `-u` next to the live Odoo.
+Two consequences, and what the module does about each:
+
+- *A write the cron did not need breaks the upgrade.* The fetch cron wrote
+  every mailbox every minute; the upgrade's own UPDATE on `pan_mail_mailbox`
+  failed to serialize, rolled back, and Cloudpepper restarted on the new code
+  anyway (Juffermans, 26-11, #471). An idle mailbox is written once in
+  `IDLE_WRITE_EVERY_MINUTES` now (§5 step 4, the heartbeat above).
+- *A column the code has and the database has not.* Until `-u` runs, every
+  read of a model with a new stored field raises `UndefinedColumn`. Where the
+  module reads first, it asks first and waits: `ir_http.missing_columns()`
+  compares this module's stored fields with the database in one query, and
+  the fetch cron, the heartbeat cron (#280) and `mail.mail.send` (#247) log
+  one warning naming `-u pan_mail_pro` and do nothing else; mail stays queued.
+  The session flags catch the error in a savepoint instead (#256).
+- *Where Odoo reads first, nothing can wait.* Odoo reads every stored column
+  of the logged-in `res.users` before any module code runs, and every column
+  of `mail.message` and `res.partner` on every chatter. A new stored field
+  there is a 500 until `-u`, and no code of ours can catch it (#255). So it
+  is refused at the change: `PER_REQUEST_COLUMNS` in
+  `tests/test_cron_schema_behind.py` lists the ones that exist, and a new one
+  fails the suite. Per-user state goes in a model of its own, like
+  `pan.mail.account`.
+
 ## 10. Security and permissions
 
 All Microsoft permissions are **delegated** (user context, never application) —
@@ -3749,7 +3781,7 @@ eight groups:
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_up_and_running.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding and its end, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_inbox_tour.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, the tour's row and its sentences, and that no colour lacks a dark side |
 | The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_hosting.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, where the Odoo runs and that an Odoo.sh staging branch is a copy, the error ledger, and what leaves for PostHog |
-| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
+| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py`, `test_cron_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
 `tests/common.py` provides the shared fixture -- a notification mailbox, a
 shared mailbox, a personal mailbox, connected users, an external partner, and a

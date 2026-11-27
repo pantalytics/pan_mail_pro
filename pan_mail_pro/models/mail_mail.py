@@ -13,6 +13,7 @@ from .mail_provider_client import (
     ERROR_ACCESS_DENIED, ERROR_NO_RECIPIENTS, ERROR_THROTTLED, ERROR_UNAVAILABLE,
 )
 from ..compat import notification_status, postprocess_sent_message
+from .ir_http import warn_if_schema_behind
 from .neutralization import COPY_FROM_HEADER, database_is_copy
 from .providers.mime_utils import odoo_headers
 
@@ -208,6 +209,13 @@ class MailMail(models.Model):
         failures keep their reason on the mail — durable, because no raise
         unwinds them — under Settings → Technical → Email.
         """
+        # Code pulled, `-u` not run (#247): the first read of a mail or a
+        # mailbox would raise on a column the upgrade has not added, in the
+        # chatter's Send or in the queue every minute. The mail stays queued
+        # and goes once the upgrade has run; before any field is read, since
+        # `mail.mail` carries columns of this module too.
+        if warn_if_schema_behind(self.env, _logger, 'Outgoing Mail'):
+            return True
         # `mailing_id` only exists when the mass_mailing module is installed.
         mass_mails = self.filtered(lambda m: hasattr(m, 'mailing_id') and m.mailing_id)
         delivered = 0

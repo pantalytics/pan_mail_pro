@@ -117,6 +117,7 @@ from odoo.http import request
 
 from . import encryption_utils
 from .hosting import edition, hosting
+from .ir_http import warn_if_schema_behind
 from .neutralization import database_is_copy, database_sees_a_copy
 from .pan_mail_error import MAX_CODES_REPORTED
 from .res_users import _referer_path
@@ -872,6 +873,11 @@ class PanMailLicense(models.Model):
 
     @api.model
     def _cron_heartbeat(self):
+        # The schema first, like the fetch cron (#280): `current()` reads
+        # every stored column of the link, so a column `-u` has not added yet
+        # was a traceback a day and no heartbeat.
+        if warn_if_schema_behind(self.env, _logger, 'License'):
+            return
         # Guarded, like every other caller: a heartbeat that raises would
         # otherwise take the cron's transaction with it, and with it the
         # `setup_reported` / `errors_reported` it had just written, so the
