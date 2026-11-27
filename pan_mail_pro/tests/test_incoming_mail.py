@@ -17,7 +17,7 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
 )
 from odoo.addons.pan_mail_pro.models.pan_mail_fetcher import INTERNAL_DOMAINS_CTX
 from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import SYNC_FAILURE_LIMIT
-from odoo.addons.pan_mail_pro.tests.common import MailProTestCase
+from odoo.addons.pan_mail_pro.tests.common import MailProTestCase, mailbox_writes
 
 
 
@@ -516,9 +516,8 @@ class TestCursorHoldsOnFailure(TransactionCase):
         processed, cursor, stalled_on, _ = self._fetch(messages, {'<msg-1@test>'})
 
         self.assertEqual(processed, 1)
-        # No progress to report, but reporting None would let the caller
-        # decide the folder was empty and jump to now().
-        self.assertEqual(cursor, self.mailbox.last_sync_date)
+        # Nothing landed before the failure, so no progress: the caller holds.
+        self.assertIsNone(cursor)
         self.assertEqual(stalled_on['message_id'], '<msg-1@test>')
 
     def test_clean_batch_still_advances_to_the_last_message(self):
@@ -644,7 +643,7 @@ class TestThrottleInsideABatch(TransactionCase):
                 self.mailbox, FOLDER_INBOX)
         self.assertIsNone(stalled_on)
         self.assertIsInstance(throttled, ThrottledError)
-        self.assertEqual(cursor, self.mailbox.last_sync_date)
+        self.assertIsNone(cursor, 'nothing landed, so the caller holds the cursor')
 
     def test_a_throttle_during_get_message_is_a_pause_not_a_failure(self):
         """Mirrors the mailbox-level handler: the wait on the mailbox, the
@@ -893,16 +892,7 @@ class TestPerFolderCursor(MailProTestCase):
                             'last_sent_sync_date': datetime(2026, 7, 10, 23, 11, 40),
                             'state': 'active', 'error_message': False,
                             'sync_failure_count': 0})
-        Mailbox = type(self.mailbox)
-        original = Mailbox.write
-        written = []
-
-        def write(records, vals):
-            if records & self.mailbox:
-                written.append(sorted(vals))
-            return original(records, vals)
-
-        with patch.object(Mailbox, 'write', write):
+        with mailbox_writes(self.mailbox) as written:
             self._sync({})
             self._sync({FOLDER_INBOX: [self._msg(1, last)]})
             self.mailbox._record_sync_success()

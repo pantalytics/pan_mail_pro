@@ -189,6 +189,25 @@ def checked_at(mailbox, when):
     mailbox.invalidate_recordset()
 
 
+@contextlib.contextmanager
+def mailbox_writes(mailbox):
+    """Collect the field names of every write that touches `mailbox`.
+
+    #471 is a promise that a run with nothing new leaves the mailbox row
+    alone; this is how a test checks it."""
+    Mailbox = type(mailbox)
+    original = Mailbox.write
+    written = []
+
+    def write(records, vals):
+        if records & mailbox:
+            written.append(sorted(vals))
+        return original(records, vals)
+
+    with patch.object(Mailbox, 'write', write):
+        yield written
+
+
 class MailProTestCase(TransactionCase):
     """Common setUp for routing + composer tests."""
 

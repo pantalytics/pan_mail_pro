@@ -310,27 +310,8 @@ class PanMailMailbox(models.Model):
     # Read from the access check's own run, like `last_check_date` (#471):
     # the hourly check used to write the mailbox row every hour for nothing.
     access_checked_date = fields.Datetime(
-        string='Access checked', compute='_compute_access_checked_date',
+        string='Access checked', compute='_compute_check_dates',
         help='When the access check last asked the provider about this mailbox.')
-
-    @api.depends('run_ids.state', 'run_ids.started', 'run_ids.kind')
-    def _compute_access_checked_date(self):
-        """The start of the newest access check that finished, either way.
-
-        A check the provider refused counts too: it is asked again in an
-        hour, not every minute.
-        """
-        last = {}
-        if self.ids:
-            last = {
-                mailbox.id: started
-                for mailbox, started in self.env['pan.mail.sync.run'].sudo()._read_group(
-                    [('mailbox_id', 'in', self.ids), ('kind', '=', 'access_check'),
-                     ('state', '!=', 'running')],
-                    ['mailbox_id'], ['started:max'])
-            }
-        for record in self:
-            record.access_checked_date = last.get(record.id, False)
 
     def _access_check_due(self):
         """Once an hour, and at once on a mailbox never checked."""
@@ -374,8 +355,7 @@ class PanMailMailbox(models.Model):
         # was refused at the door learned nothing about it, so `unknown`
         # from a refusal does not overwrite what an earlier check found.
         # Written only when it changed: the run is the timestamp (#471).
-        if (answer['kind'] != 'unknown' or self.address_kind == 'unknown') \
-                and answer['kind'] != self.address_kind:
+        if answer['kind'] not in ('unknown', self.address_kind):
             self.sudo().write({'address_kind': answer['kind']})
         account.sudo().write({'verified_date': now})
         row = Access.note_check(self, account, answer)
@@ -547,7 +527,7 @@ class PanMailMailbox(models.Model):
     # mailbox's newest finished one, so the answer survives a quiet week.
     last_check_date = fields.Datetime(
         string='Last checked',
-        compute='_compute_last_check_date',
+        compute='_compute_check_dates',
         help="When this mailbox last completed a sync run, whether or not "
              "there was anything to read. Kept apart from 'Last synced', "
              "which is the date of the newest message read."
@@ -878,24 +858,15 @@ class PanMailMailbox(models.Model):
             )
 
     @api.depends('run_ids.state', 'run_ids.started', 'run_ids.kind')
-    def _compute_last_check_date(self):
-        """The start of the newest incoming run that finished.
-
-        A throttled run counts (it read, it was only asked to slow down); a
-        failed one does not. One query for the whole set: the list shows the
-        column.
-        """
-        last = {}
-        if self.ids:
-            last = {
-                mailbox.id: started
-                for mailbox, started in self.env['pan.mail.sync.run'].sudo()._read_group(
-                    [('mailbox_id', 'in', self.ids), ('kind', '=', 'incoming'),
-                     ('state', '=', 'done')],
-                    ['mailbox_id'], ['started:max'])
-            }
+    def _compute_check_dates(self):
+        """The start of the newest run of each kind that counts as a check
+        (`CHECKED_STATES`): a throttled read counts, a failed one does not; a
+        refused access check waits its hour like any other. One query for the
+        whole set: the list shows the column."""
+        last = self.env['pan.mail.sync.run'].sudo()._last_checks(self.ids)
         for record in self:
-            record.last_check_date = last.get(record.id, False)
+            record.last_check_date = last.get((record.id, 'incoming'), (0, False))[1]
+            record.access_checked_date = last.get((record.id, 'access_check'), (0, False))[1]
 
     def _record_sync_success(self):
         """Back to active, counter cleared, and nothing written when it already was.
@@ -905,7 +876,7 @@ class PanMailMailbox(models.Model):
         """
         self.ensure_one()
         vals = {}
-        if self.sync_status == 'stopped':
+        if not self.sync_enabled and self.sync_failure_count >= SYNC_FAILURE_LIMIT:
             # A run that went through (Run Now) resumes a stopped sync.
             vals['sync_enabled'] = True
         if self.state != 'active':

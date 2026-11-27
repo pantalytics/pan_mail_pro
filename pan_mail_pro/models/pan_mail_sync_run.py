@@ -17,6 +17,7 @@ same as the error ledger.
 import logging
 
 from odoo import api, fields, models, _
+from odoo.tools.sql import create_index
 
 _logger = logging.getLogger(__name__)
 
@@ -28,6 +29,15 @@ RUN_RETENTION_DAYS = 30
 # The context key the fetch carries its run on, so the routing log and the
 # counters find it without every method in the chain taking an argument.
 RUN_CTX = 'pan_mail_sync_run_id'
+
+# The states a run of each kind counts as a check in: the mailbox's
+# `last_check_date` (incoming) and `access_checked_date` (access check) read
+# the newest such run, and the vacuum keeps it. A failed read is not a check;
+# a check the provider refused still waits its hour.
+CHECKED_STATES = {
+    'incoming': ('done',),
+    'access_check': ('done', 'failed'),
+}
 
 
 class PanMailSyncRun(models.Model):
@@ -98,6 +108,35 @@ class PanMailSyncRun(models.Model):
                     type(error).__name__
             run.write(vals)
 
+    def init(self):
+        # What the mailbox's two dates and the vacuum ask: the newest run of
+        # one kind for one mailbox.
+        create_index(self.env.cr, 'pan_mail_sync_run_mailbox_kind_started_idx',
+                     self._table, ['mailbox_id', 'kind', 'started DESC', 'id DESC'])
+
+    @api.model
+    def _last_checks(self, mailbox_ids=None):
+        """{(mailbox_id, kind): (id, started)} of the newest run of each kind
+        that counts as a check (`CHECKED_STATES`), for `mailbox_ids` or all."""
+        self.flush_model(['mailbox_id', 'kind', 'state', 'started'])
+        where = ' OR '.join(
+            f"(kind = '{kind}' AND state IN %s)" for kind in CHECKED_STATES)
+        params = [tuple(states) for states in CHECKED_STATES.values()]
+        scope = ''
+        if mailbox_ids is not None:
+            if not mailbox_ids:
+                return {}
+            scope = 'mailbox_id IN %s AND '
+            params.insert(0, tuple(mailbox_ids))
+        self.env.cr.execute(f"""
+            SELECT DISTINCT ON (mailbox_id, kind) mailbox_id, kind, id, started
+              FROM pan_mail_sync_run
+             WHERE {scope}({where})
+          ORDER BY mailbox_id, kind, started DESC, id DESC
+        """, params)
+        return {(mailbox, kind): (run, started)
+                for mailbox, kind, run, started in self.env.cr.fetchall()}
+
     @api.autovacuum
     def _gc_runs(self):
         """A day for a run that read nothing, thirty for every other one.
@@ -110,15 +149,7 @@ class PanMailSyncRun(models.Model):
         now = fields.Datetime.now()
         empty = fields.Datetime.subtract(now, days=EMPTY_RUN_RETENTION_DAYS)
         old = fields.Datetime.subtract(now, days=RUN_RETENTION_DAYS)
-        self.flush_model(['mailbox_id', 'kind', 'state', 'started'])
-        self.env.cr.execute("""
-            SELECT DISTINCT ON (mailbox_id, kind) id
-              FROM pan_mail_sync_run
-             WHERE (kind = 'incoming' AND state = 'done')
-                OR (kind = 'access_check' AND state != 'running')
-          ORDER BY mailbox_id, kind, started DESC, id DESC
-        """)
-        keep = [row[0] for row in self.env.cr.fetchall()]
+        keep = [run for run, _started in self._last_checks().values()]
         self.sudo().search([
             ('id', 'not in', keep),
             '|',

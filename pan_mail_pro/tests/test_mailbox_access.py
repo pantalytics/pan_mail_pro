@@ -25,7 +25,7 @@ from odoo.addons.pan_mail_pro.models.mail_provider_client import (
     get_provider_client,
 )
 
-from .common import MailProTestCase
+from .common import MailProTestCase, mailbox_writes
 
 GRAPH = 'odoo.addons.pan_mail_pro.models.providers.microsoft.graph_client'
 GMAIL = 'odoo.addons.pan_mail_pro.models.providers.google.gmail_client'
@@ -400,17 +400,8 @@ class TestAccessTable(MailProTestCase):
             mailbox._verify_access(account)
         first = mailbox.access_checked_date
 
-        Mailbox = type(mailbox)
-        original = Mailbox.write
-        written = []
-
-        def write(records, vals):
-            if records & mailbox:
-                written.append(sorted(vals))
-            return original(records, vals)
-
         with patch(f'{GRAPH_CLIENT}.inspect_mailbox', return_value=answer), \
-                patch.object(Mailbox, 'write', write):
+                mailbox_writes(mailbox) as written:
             mailbox._verify_access(account)
 
         self.assertEqual(written, [], 'an unchanged check wrote the mailbox')

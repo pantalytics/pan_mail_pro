@@ -377,10 +377,8 @@ class PanMailFetcher(models.AbstractModel):
                     stalls.append((folder, stalled_on))
                 if throttled is not None:
                     throttles.append(throttled)
-                # Each folder advances on its own progress only. An empty
-                # folder holds its cursor: it used to jump to now(), which
-                # wrote every mailbox every minute for nothing (#471), and the
-                # next run asks from the same point and gets the same nothing.
+                # Each folder advances on its own progress only; one where
+                # nothing landed holds its cursor (#471).
                 cursors[folder] = cursor
 
         self._write_folder_cursors(mailbox, cursors)
@@ -484,10 +482,8 @@ class PanMailFetcher(models.AbstractModel):
 
         Returns:
             tuple: (processed_count, cursor_datetime or None, stalled_message
-                or None, throttled_error or None). The cursor is None only when
-                the folder held nothing to read; a batch whose very first
-                message failed, or was throttled, returns the mailbox's current
-                cursor; the caller holds the folder on either. The
+                or None, throttled_error or None). The cursor is None when no
+                message landed, and the caller holds the folder. The
                 throttle is handed back rather than raised so that what landed
                 before it is kept: see the loop.
         """
@@ -562,12 +558,6 @@ class PanMailFetcher(models.AbstractModel):
             # dedups on Message-ID, so re-reading them next run costs a lookup.
             if stalled_on is None and message.get('date'):
                 cursor = message['date']
-
-        if (stalled_on is not None or throttled is not None) and cursor is None:
-            # The first message of the batch failed, or the provider asked for
-            # a pause before any landed: hold the cursor exactly where it was
-            # rather than reporting "nothing found".
-            cursor = self._folder_cursor(mailbox, folder)
 
         return processed, cursor, stalled_on, throttled
 

@@ -21,7 +21,7 @@ from odoo.tests import tagged
 from odoo.addons.pan_mail_pro.models.pan_mail_license import errors_signature
 from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import STALE_AFTER_MINUTES
 
-from .common import MailProTestCase, checked_at
+from .common import MailProTestCase, checked_at, mailbox_writes
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')
@@ -56,9 +56,10 @@ class TestMailboxHeartbeat(MailProTestCase):
         self.mailbox.write({'last_sync_date': cursor})
         self._working()
 
-        with self._no_mailbox_write():
+        with mailbox_writes(self.mailbox) as written:
             self.mailbox._record_sync_success()
 
+        self.assertEqual(written, [], 'a healthy run wrote the mailbox')
         self.assertEqual(
             self.mailbox.last_sync_date, cursor,
             'the fetch cursor moved on a run that read nothing')
@@ -89,17 +90,6 @@ class TestMailboxHeartbeat(MailProTestCase):
         self.assertFalse(old.exists(), 'an old failed run survived the vacuum')
         self.mailbox.invalidate_recordset()
         self.assertEqual(self.mailbox.last_check_date, month)
-
-    def _no_mailbox_write(self):
-        Mailbox = type(self.env['pan.mail.mailbox'])
-        original = Mailbox.write
-        case = self
-
-        def write(records, vals):
-            if records & case.mailbox:
-                case.fail(f'a quiet run wrote the mailbox: {sorted(vals)}')
-            return original(records, vals)
-        return patch.object(Mailbox, 'write', write)
 
     # ----------------------------------------------------------------- stale
 
