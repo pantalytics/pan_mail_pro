@@ -19,9 +19,11 @@ from odoo import fields
 from odoo.tests import tagged
 
 from odoo.addons.pan_mail_pro.models.pan_mail_license import errors_signature
-from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import STALE_AFTER_MINUTES
+from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import (
+    IDLE_WRITE_EVERY_MINUTES, STALE_AFTER_MINUTES,
+)
 
-from .common import MailProTestCase
+from .common import MailProTestCase, mailbox_writes
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')
@@ -77,6 +79,42 @@ class TestMailboxHeartbeat(MailProTestCase):
 
         self.mailbox._record_sync_success()
 
+        self.assertGreater(self.mailbox.last_check_date, before)
+
+    def test_an_idle_heartbeat_inside_the_window_is_not_written(self):
+        """#471: once in IDLE_WRITE_EVERY_MINUTES, not every minute. Well
+        inside STALE_AFTER_MINUTES, so the screen never sees the gap."""
+        self.assertLess(IDLE_WRITE_EVERY_MINUTES * 2, STALE_AFTER_MINUTES)
+        self._working()
+        self._checked(IDLE_WRITE_EVERY_MINUTES - 1)
+        before = self.mailbox.last_check_date
+
+        with mailbox_writes(self.mailbox) as written:
+            self.mailbox._record_sync_success()
+
+        self.assertEqual(written, [], 'an idle run inside the window wrote the mailbox')
+        self.assertEqual(self.mailbox.last_check_date, before)
+
+    def test_an_idle_heartbeat_past_the_window_is_written(self):
+        self._working()
+        self._checked(IDLE_WRITE_EVERY_MINUTES)
+        before = self.mailbox.last_check_date
+
+        self.mailbox._record_sync_success()
+
+        self.assertGreater(self.mailbox.last_check_date, before)
+
+    def test_any_other_change_writes_the_heartbeat_with_it(self):
+        """A run that clears an error is not idle: the error goes now, and
+        the heartbeat rides along in the same write."""
+        self._working()
+        self._checked(1)
+        before = self.mailbox.last_check_date
+        self.mailbox.error_message = 'Graph said 503'
+
+        self.mailbox._record_sync_success()
+
+        self.assertFalse(self.mailbox.error_message)
         self.assertGreater(self.mailbox.last_check_date, before)
 
     # ----------------------------------------------------------------- stale
