@@ -17,7 +17,7 @@ from lxml import etree
 from odoo import fields
 from odoo.tests import tagged
 
-from .common import MailProTestCase
+from .common import MailProTestCase, checked_at
 
 
 @tagged('pan_mail_pro', 'post_install', '-at_install')
@@ -45,7 +45,7 @@ class TestPersonalNotificationMailbox(MailProTestCase):
         self.assertNotIn('is_notification_mailbox', field.get('invisible') or '')
 
     def test_it_goes_stale_like_any_mailbox_that_syncs(self):
-        self.personal_mailbox.last_check_date = fields.Datetime.now() - timedelta(days=2)
+        checked_at(self.personal_mailbox, fields.Datetime.now() - timedelta(days=2))
         self.assertTrue(self.personal_mailbox._sync_is_stale())
 
     def test_it_is_in_its_owner_s_inbox(self):

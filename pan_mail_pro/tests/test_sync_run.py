@@ -97,6 +97,7 @@ class TestSyncRun(TransactionCase):
         self.assertEqual(len(self._runs()), SYNC_FAILURE_LIMIT)
 
         # A run that goes through (Run Now) resumes it.
+        self.env['pan.mail.sync.run']._start(self.mailbox)._finish()
         self.mailbox._record_sync_success()
         self.assertTrue(self.mailbox.sync_enabled)
         self.assertEqual(self.mailbox.sync_status, 'syncing')
@@ -118,7 +119,9 @@ class TestSyncRun(TransactionCase):
             self.mailbox.invalidate_recordset(['sync_status', 'health_status'])
             self.assertFalse(self.mailbox.last_check_date)
             self.assertEqual(self.mailbox.sync_status, 'not_checked')
-            self.mailbox.last_check_date = fields.Datetime.now()
+            self.env['pan.mail.sync.run'].create(
+                {'mailbox_id': self.mailbox.id, 'state': 'done'})
+            self.mailbox.invalidate_recordset(['last_check_date', 'sync_status'])
             self.assertEqual(self.mailbox.sync_status, 'syncing')
 
     def test_routing_follows_the_team_picked(self):

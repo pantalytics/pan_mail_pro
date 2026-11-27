@@ -1963,16 +1963,21 @@ Stripe webhooks use:
 3. A folder's progress is the last message that was actually **processed**,
    and it stops at the first one that raised — the rest of the batch is still
    read, but the cursor does not pass the failure
-4. If a folder came back empty, *its* cursor jumps to `now()` — caught up. Not
-   when it stalled: that jump is exactly the skip the stall prevents
+4. If a folder came back empty, or only handed back the message the cursor
+   already sits on, *its* cursor stays where it is and nothing is written. It
+   used to jump to `now()`, which wrote every mailbox every minute; that write
+   collided with Cloudpepper's `-u` and took Juffermans down (#471). A run that
+   reads nothing new writes no `pan.mail.mailbox` row at all
 
 **A cursor is not a heartbeat.** Both cursors answer "when did mail last
 arrive", and on a quiet mailbox both stand still for as long as nobody writes
 in. Nothing on the model answered "when did we last look", so the form showed
 `last_sync_date` under the label *Last synced* and read half an hour behind on
-a mailbox syncing every minute. `last_check_date` is the run itself, written by
-`_record_sync_success()` on every completed pass including the great majority
-that read nothing. It is the only field that can tell a quiet mailbox from a
+a mailbox syncing every minute. `last_check_date` is the run itself: computed
+from the newest finished incoming `pan.mail.sync.run`, which every pass writes
+anyway, including the great majority that read nothing. It is not stored on the
+mailbox, so a quiet run leaves the mailbox row alone (#471), and the runs'
+vacuum keeps each mailbox's newest finished run whatever its age. It is the only field that can tell a quiet mailbox from a
 stopped one, which is the failure the module could not see before: Odoo
 deactivates a cron that keeps hitting its time limit, and until then that
 showed up as mail not arriving, on a form whose every indicator still read OK.

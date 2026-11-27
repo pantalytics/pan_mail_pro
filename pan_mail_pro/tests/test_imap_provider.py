@@ -557,8 +557,8 @@ class TestImapProvider(TransactionCase):
         back a batch consisting only of the slack day — on a mailbox busier
         than `limit` messages a day, every one of them then fails the exact
         `>= since` test and the fetch comes back empty. An empty fetch reads as
-        "caught up", so `_process_mailbox` jumps the cursor to now() and the
-        mail in between is gone for good.
+        "caught up", and when `_process_mailbox` still jumped the cursor to
+        now() on that the mail in between was gone for good.
         """
         account, mailbox = self._imap_account(), self._mailbox()
         since = datetime(2026, 5, 12, 0, 0, 0)

@@ -100,11 +100,25 @@ class PanMailSyncRun(models.Model):
 
     @api.autovacuum
     def _gc_runs(self):
-        """A day for a run that read nothing, thirty for every other one."""
+        """A day for a run that read nothing, thirty for every other one.
+
+        Except each mailbox's newest finished incoming run, whatever its age:
+        it is the mailbox's `last_check_date`, and a mailbox whose cron died a
+        week ago has to keep saying when it was last read.
+        """
         now = fields.Datetime.now()
         empty = fields.Datetime.subtract(now, days=EMPTY_RUN_RETENTION_DAYS)
         old = fields.Datetime.subtract(now, days=RUN_RETENTION_DAYS)
+        self.flush_model(['mailbox_id', 'kind', 'state', 'started'])
+        self.env.cr.execute("""
+            SELECT DISTINCT ON (mailbox_id) id
+              FROM pan_mail_sync_run
+             WHERE kind = 'incoming' AND state = 'done'
+          ORDER BY mailbox_id, started DESC, id DESC
+        """)
+        keep = [row[0] for row in self.env.cr.fetchall()]
         self.sudo().search([
+            ('id', 'not in', keep),
             '|',
             ('started', '<', old),
             '&', '&', '&', ('started', '<', empty), ('state', '=', 'done'),

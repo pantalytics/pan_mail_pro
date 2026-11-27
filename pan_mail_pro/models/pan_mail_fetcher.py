@@ -282,10 +282,12 @@ class PanMailFetcher(models.AbstractModel):
         badge red.
         """
         _logger.info("[Incoming Mail] Mailbox %s throttled: %s", mailbox.id, error)
-        # `last_check_date` moves too: the mailbox was read, it was only asked
-        # to slow down, and a run that is throttled every minute must not
-        # show the "not being read" warning on top of the wait.
-        mailbox.write({'error_message': str(error), 'last_check_date': fields.Datetime.now()})
+        # The run is finished as done, so `last_check_date` moves too: the
+        # mailbox was read, it was only asked to slow down, and a run that is
+        # throttled every minute must not show the "not being read" warning
+        # on top of the wait. The reason is written only when it changed.
+        if mailbox.error_message != str(error):
+            mailbox.write({'error_message': str(error)})
         self.env['pan.mail.error']._record(
             'incoming.throttled', error, level='warning', mailbox=mailbox)
 
@@ -373,13 +375,10 @@ class PanMailFetcher(models.AbstractModel):
                 if throttled is not None:
                     throttles.append(throttled)
                 # Each folder advances on its own progress only. An empty
-                # folder is caught up, so it jumps to now() -- but not when it
-                # stalled on its first message: that jump is exactly the skip
-                # the stall prevents, and `_fetch_folder` hands back the cursor
-                # it was holding instead.
-                cursors[folder] = cursor or (
-                    None if stalled_on is not None else fields.Datetime.now()
-                )
+                # folder holds its cursor: it used to jump to now(), which
+                # wrote every mailbox every minute for nothing (#471), and the
+                # next run asks from the same point and gets the same nothing.
+                cursors[folder] = cursor
 
         self._write_folder_cursors(mailbox, cursors)
 
@@ -408,10 +407,14 @@ class PanMailFetcher(models.AbstractModel):
 
     @staticmethod
     def _write_folder_cursors(mailbox, cursors):
-        """Store each folder's progress. A `None` holds that folder where it is."""
+        """Store each folder's progress. A `None` holds that folder where it
+        is, and so does a cursor that did not move: the provider hands the
+        newest message back when its `since` is inclusive, and writing the
+        same date again is still a write on the mailbox row (#471)."""
         moved = {
             FOLDER_CURSOR_FIELDS[folder]: cursor
-            for folder, cursor in cursors.items() if cursor
+            for folder, cursor in cursors.items()
+            if cursor and cursor != mailbox[FOLDER_CURSOR_FIELDS[folder]]
         }
         if moved:
             mailbox.write(moved)
@@ -481,7 +484,7 @@ class PanMailFetcher(models.AbstractModel):
                 or None, throttled_error or None). The cursor is None only when
                 the folder held nothing to read; a batch whose very first
                 message failed, or was throttled, returns the mailbox's current
-                cursor, so the caller holds instead of jumping to now(). The
+                cursor; the caller holds the folder on either. The
                 throttle is handed back rather than raised so that what landed
                 before it is kept: see the loop.
         """
@@ -511,9 +514,8 @@ class PanMailFetcher(models.AbstractModel):
         # messages that actually landed. It stops at the first one that raised
         # and never passes it again in this batch: a message whose date is
         # already behind the cursor is a message nobody will ever fetch again.
-        # A message whose date could not be parsed must not empty the cursor
-        # either -- with no cursor the caller jumps to now() and skips the
-        # whole batch.
+        # A message whose date could not be parsed leaves the cursor where
+        # the last dated one put it.
         cursor = None
         stalled_on = None
         throttled = None

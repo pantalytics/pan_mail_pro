@@ -176,6 +176,19 @@ def send_and_capture(mails):
     return None
 
 
+def checked_at(mailbox, when):
+    """Make `when` the mailbox's last completed check, or none at all.
+
+    `last_check_date` reads the newest finished incoming run (#471), so a
+    test that wants a heartbeat writes the run it comes from.
+    """
+    Run = mailbox.env['pan.mail.sync.run'].sudo()
+    Run.search([('mailbox_id', '=', mailbox.id), ('kind', '=', 'incoming')]).unlink()
+    if when:
+        Run.create({'mailbox_id': mailbox.id, 'started': when, 'state': 'done'})
+    mailbox.invalidate_recordset()
+
+
 class MailProTestCase(TransactionCase):
     """Common setUp for routing + composer tests."""
 

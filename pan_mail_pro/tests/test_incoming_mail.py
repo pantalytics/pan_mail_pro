@@ -871,17 +871,44 @@ class TestPerFolderCursor(MailProTestCase):
         self.assertEqual(self.mailbox.last_sent_sync_date,
                          datetime(2026, 5, 12, 10, 5, 0))
 
-    def test_an_empty_folder_catches_up_on_its_own(self):
-        self.mailbox.write({
-            'last_sent_sync_date': datetime(2026, 7, 10, 23, 11, 40)})
+    def test_an_empty_folder_holds_its_cursor(self):
+        """Nothing in Sent leaves Sent where it was, whatever the inbox did.
+        It used to jump to now(), a write on every mailbox every minute (#471)."""
+        sent = datetime(2026, 7, 10, 23, 11, 40)
+        self.mailbox.write({'last_sent_sync_date': sent})
 
         self._sync({FOLDER_INBOX: [self._msg(1, datetime(2026, 5, 12, 10, 0))]})
 
-        # Nothing in Sent means Sent is caught up, whatever the inbox did.
-        self.assertGreater(self.mailbox.last_sent_sync_date,
-                           datetime(2026, 9, 1))
+        self.assertEqual(self.mailbox.last_sent_sync_date, sent)
         self.assertEqual(self.mailbox.last_sync_date,
                          datetime(2026, 5, 12, 10, 0))
+
+    def test_a_run_that_reads_nothing_new_writes_no_mailbox(self):
+        """#471: the cron's write on every mailbox every minute collided with
+        Cloudpepper's `-u` and took a customer down. An empty run, and one
+        that only sees the newest message again (an inclusive `since`),
+        leave the row alone."""
+        last = datetime(2026, 9, 8, 8, 44, 6)
+        self.mailbox.write({'last_sync_date': last,
+                            'last_sent_sync_date': datetime(2026, 7, 10, 23, 11, 40),
+                            'state': 'active', 'error_message': False,
+                            'sync_failure_count': 0})
+        Mailbox = type(self.mailbox)
+        original = Mailbox.write
+        written = []
+
+        def write(records, vals):
+            if records & self.mailbox:
+                written.append(sorted(vals))
+            return original(records, vals)
+
+        with patch.object(Mailbox, 'write', write):
+            self._sync({})
+            self._sync({FOLDER_INBOX: [self._msg(1, last)]})
+            self.mailbox._record_sync_success()
+
+        self.assertEqual(written, [], 'a run with no new mail wrote the mailbox')
+        self.assertEqual(self.mailbox.last_sync_date, last)
 
     def test_rewinding_the_start_date_rewinds_both_cursors(self):
         self.mailbox.write({

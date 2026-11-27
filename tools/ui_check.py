@@ -4641,13 +4641,22 @@ class Checks:
             page.wait_for_timeout(2500)
             return len(page.query_selector_all('.o_mailpro_mailbox_alert'))
 
+        def checked_at(when):
+            """`last_check_date` is the newest finished run (#471): make one."""
+            done = self.call('pan.mail.sync.run', 'search',
+                             [('mailbox_id', '=', mailbox_id), ('kind', '=', 'incoming')])
+            if done:
+                self.call('pan.mail.sync.run', 'unlink', done)
+            if when:
+                self.call('pan.mail.sync.run', 'create',
+                          {'mailbox_id': mailbox_id, 'started': when, 'state': 'done'})
+
         try:
             # Healthy: a run finished a moment ago and nothing is wrong.
             self.call('pan.mail.mailbox', 'write', [mailbox_id],
                       {'state': 'active', 'error_message': False,
-                       'sync_failure_count': 0,
-                       'last_check_date': datetime.datetime.now(
-                           datetime.UTC).strftime('%Y-%m-%d %H:%M:%S')})
+                       'sync_failure_count': 0})
+            checked_at(datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d %H:%M:%S'))
             quiet = marks()
             text = self.form_text(url)
             self.shot('mailbox-healthy.png')
@@ -4706,8 +4715,7 @@ class Checks:
             # Stale: the heartbeat is old enough that nobody is reading this
             # mailbox, with no error recorded anywhere. The status says so in
             # the header and the Sync row says it in red.
-            self.call('pan.mail.mailbox', 'write', [mailbox_id],
-                      {'last_check_date': '2020-01-01 00:00:00'})
+            checked_at('2020-01-01 00:00:00')
             self.form_text(url)
             self.shot('mailbox-stale.png')
             badge = self.page.query_selector('.o_form_view .o_form_statusbar .o_mailpro_mailbox_status')
@@ -4725,8 +4733,8 @@ class Checks:
                         f'healthy and {loud} once it stopped, expected one more')
                 self.shot('inbox-mailbox-stale.png')
         finally:
-            self.call('pan.mail.mailbox', 'write', [mailbox_id],
-                      {'state': was, 'last_check_date': False})
+            self.call('pan.mail.mailbox', 'write', [mailbox_id], {'state': was})
+            checked_at(False)
 
     # -- The connect banner ---------------------------------------------------
 

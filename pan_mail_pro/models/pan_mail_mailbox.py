@@ -518,10 +518,15 @@ class PanMailMailbox(models.Model):
     # minute. A cursor answers "when did mail last arrive"; nothing answered
     # "when did we last check", so the screen could not say a mailbox was fine
     # and put two buttons there instead.
+    #
+    # Read from the sync runs, not written on the mailbox (#471): a run that
+    # read nothing used to write this column every minute, on every mailbox,
+    # and that write collided with Cloudpepper's `-u` and took Juffermans
+    # down. The run row is written anyway, and the runs' own vacuum keeps each
+    # mailbox's newest finished one, so the answer survives a quiet week.
     last_check_date = fields.Datetime(
         string='Last checked',
-        readonly=True,
-        copy=False,
+        compute='_compute_last_check_date',
         help="When this mailbox last completed a sync run, whether or not "
              "there was anything to read. Kept apart from 'Last synced', "
              "which is the date of the newest message read."
@@ -851,17 +856,34 @@ class PanMailMailbox(models.Model):
                 subtype_xmlid='mail.mt_comment',
             )
 
-    def _record_sync_success(self):
-        """Back to active, counter cleared, and the heartbeat moved.
+    @api.depends('run_ids.state', 'run_ids.started')
+    def _compute_last_check_date(self):
+        """The start of the newest incoming run that finished.
 
-        `last_check_date` is written on every run that finishes, including the
-        overwhelming majority that read nothing at all. That is the whole point
-        of it: a mailbox with no new mail is not a mailbox that stopped, and
-        before this field there was no way for the screen to tell the two
-        apart.
+        A throttled run counts (it read, it was only asked to slow down); a
+        failed one does not. One query for the whole set: the list shows the
+        column.
+        """
+        last = {}
+        if self.ids:
+            last = {
+                mailbox.id: started
+                for mailbox, started in self.env['pan.mail.sync.run'].sudo()._read_group(
+                    [('mailbox_id', 'in', self.ids), ('kind', '=', 'incoming'),
+                     ('state', '=', 'done')],
+                    ['mailbox_id'], ['started:max'])
+            }
+        for record in self:
+            record.last_check_date = last.get(record.id, False)
+
+    def _record_sync_success(self):
+        """Back to active, counter cleared, and nothing written when it already was.
+
+        The heartbeat is the run row (`last_check_date` reads it), so a run
+        that read nothing on a healthy mailbox leaves this table alone (#471).
         """
         self.ensure_one()
-        vals = {'last_check_date': fields.Datetime.now()}
+        vals = {}
         if self.sync_status == 'stopped':
             # A run that went through (Run Now) resumes a stopped sync.
             vals['sync_enabled'] = True

@@ -21,7 +21,7 @@ from odoo.tests import tagged
 from odoo.addons.pan_mail_pro.models.pan_mail_license import errors_signature
 from odoo.addons.pan_mail_pro.models.pan_mail_mailbox import STALE_AFTER_MINUTES
 
-from .common import MailProTestCase
+from .common import MailProTestCase, checked_at
 
 
 @tagged('post_install', '-at_install', 'pan_mail_pro')
@@ -40,8 +40,7 @@ class TestMailboxHeartbeat(MailProTestCase):
             'fixture must have a connected personal mailbox for this to mean anything')
 
     def _checked(self, minutes_ago):
-        self.mailbox.last_check_date = (
-            fields.Datetime.now() - timedelta(minutes=minutes_ago))
+        checked_at(self.mailbox, fields.Datetime.now() - timedelta(minutes=minutes_ago))
 
     def _working(self):
         """Nothing wrong with it beyond whatever the test is about to do."""
@@ -51,33 +50,56 @@ class TestMailboxHeartbeat(MailProTestCase):
 
     # ------------------------------------------------------------- heartbeat
 
-    def test_success_moves_heartbeat_not_cursor(self):
-        """The run finished. That is the fact recorded, and the only one."""
+    def test_success_moves_neither_heartbeat_nor_cursor(self):
+        """The run row is the heartbeat; the mailbox records only a change."""
         cursor = fields.Datetime.now() - timedelta(days=30)
-        self.mailbox.write({'last_sync_date': cursor, 'last_check_date': False})
+        self.mailbox.write({'last_sync_date': cursor})
+        self._working()
 
-        self.mailbox._record_sync_success()
+        with self._no_mailbox_write():
+            self.mailbox._record_sync_success()
 
-        self.assertTrue(self.mailbox.last_check_date,
-                        'a completed run left no heartbeat')
         self.assertEqual(
             self.mailbox.last_sync_date, cursor,
             'the fetch cursor moved on a run that read nothing')
 
-    def test_heartbeat_moves_even_when_nothing_else_changed(self):
-        """The common case: active, no error, no new mail, every minute.
-
-        `_record_sync_success` used to write only when something had moved, so
-        on the overwhelming majority of runs it wrote nothing at all -- which
-        is precisely the case the screen needed evidence of.
-        """
-        self._working()
+    def test_heartbeat_is_the_newest_finished_run(self):
+        """A failed run is not a check; a done one is, whatever it read."""
         before = fields.Datetime.now() - timedelta(hours=2)
-        self.mailbox.last_check_date = before
+        checked_at(self.mailbox, before)
+        Run = self.env['pan.mail.sync.run']
+        Run.create({'mailbox_id': self.mailbox.id, 'state': 'failed'})
+        self.mailbox.invalidate_recordset()
+        self.assertEqual(self.mailbox.last_check_date, before)
 
-        self.mailbox._record_sync_success()
-
+        Run.create({'mailbox_id': self.mailbox.id, 'state': 'done'})
+        self.mailbox.invalidate_recordset()
         self.assertGreater(self.mailbox.last_check_date, before)
+
+    def test_vacuum_keeps_the_last_check(self):
+        """A month-old run is vacuumed, unless it is the mailbox's last check:
+        a mailbox whose cron died has to keep saying since when."""
+        month = fields.Datetime.now() - timedelta(days=40)
+        checked_at(self.mailbox, month)
+        old = self.env['pan.mail.sync.run'].create(
+            {'mailbox_id': self.mailbox.id, 'started': month, 'state': 'failed'})
+
+        self.env['pan.mail.sync.run']._gc_runs()
+
+        self.assertFalse(old.exists(), 'an old failed run survived the vacuum')
+        self.mailbox.invalidate_recordset()
+        self.assertEqual(self.mailbox.last_check_date, month)
+
+    def _no_mailbox_write(self):
+        Mailbox = type(self.env['pan.mail.mailbox'])
+        original = Mailbox.write
+        case = self
+
+        def write(records, vals):
+            if records & case.mailbox:
+                case.fail(f'a quiet run wrote the mailbox: {sorted(vals)}')
+            return original(records, vals)
+        return patch.object(Mailbox, 'write', write)
 
     # ----------------------------------------------------------------- stale
 
@@ -119,7 +141,7 @@ class TestMailboxHeartbeat(MailProTestCase):
         reader to ignore the mark on the one that means it.
         """
         self._working()
-        self.mailbox.last_check_date = False
+        checked_at(self.mailbox, False)
         self.assertFalse(self.mailbox._sync_is_stale())
         self.assertEqual(self.mailbox.health_status, 'healthy')
 
@@ -127,8 +149,7 @@ class TestMailboxHeartbeat(MailProTestCase):
         """It syncs whatever its level says (#387), so it can fall behind too.
         It used to be exempt, on the argument that it reads nothing."""
         mailbox = self.notification_mailbox
-        mailbox.last_check_date = (
-            fields.Datetime.now() - timedelta(days=30))
+        checked_at(mailbox, fields.Datetime.now() - timedelta(days=30))
         self.assertTrue(mailbox._sync_is_stale())
 
     # --------------------------------------------------------------- message
