@@ -897,6 +897,34 @@ class TestPerFolderCursor(MailProTestCase):
 
         self.assertEqual(self.mailbox.last_sent_sync_date, recent)
 
+    def test_a_run_that_reads_mail_writes_no_mailbox(self):
+        """#473: the cursors and the heartbeat live on `pan.mail.sync.state`,
+        so even a run that reads mail leaves the mailbox row alone: no
+        `write()` and no new `write_date`. The cursors still move."""
+        self.mailbox.write({'state': 'active', 'error_message': False,
+                            'sync_failure_count': 0})
+        self.env.flush_all()
+        self.env.cr.execute('SELECT write_date FROM pan_mail_mailbox WHERE id = %s',
+                            [self.mailbox.id])
+        before, = self.env.cr.fetchone()
+        inbox, sent = datetime(2026, 9, 8, 10, 0), datetime(2026, 9, 8, 10, 5)
+
+        with mailbox_writes(self.mailbox) as written:
+            self._sync({FOLDER_INBOX: [self._msg(1, inbox)],
+                        FOLDER_SENT: [self._msg(2, sent)]})
+            self.mailbox._record_sync_success()
+        self.env.flush_all()
+
+        self.assertEqual(written, [], 'a run that read mail wrote the mailbox')
+        self.env.cr.execute('SELECT write_date FROM pan_mail_mailbox WHERE id = %s',
+                            [self.mailbox.id])
+        self.assertEqual(self.env.cr.fetchone()[0], before,
+                         'the mailbox row was updated by the sync')
+        self.mailbox.invalidate_recordset()
+        self.assertEqual(self.mailbox.last_sync_date, inbox)
+        self.assertEqual(self.mailbox.last_sent_sync_date, sent)
+        self.assertTrue(self.mailbox.last_check_date)
+
     def test_an_idle_run_inside_the_window_writes_no_mailbox(self):
         """#471: the cron wrote every mailbox every minute, and that write
         collided with Cloudpepper's `-u` (Juffermans, 26-11). A run with no

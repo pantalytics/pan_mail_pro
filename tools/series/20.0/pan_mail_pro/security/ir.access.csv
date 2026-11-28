@@ -16,3 +16,4 @@ access_pan_mail_draft_user,pan.mail.draft,pan.mail.draft,base.group_user,crud,"[
 access_pan_mail_mailbox_access_user,pan.mail.mailbox.access,pan.mail.mailbox.access,base.group_user,r,"[('account_id.user_id', 'in', [user.id, False])]"
 access_pan_mail_mailbox_access_manager,pan.mail.mailbox.access,pan.mail.mailbox.access,pan_mail_pro.group_mail_mailbox_manager,crud,
 access_pan_mail_sync_run_manager,pan.mail.sync.run,pan.mail.sync.run,pan_mail_pro.group_mail_mailbox_manager,crud,
+access_pan_mail_sync_state_manager,pan.mail.sync.state,pan.mail.sync.state,pan_mail_pro.group_mail_mailbox_manager,crud,

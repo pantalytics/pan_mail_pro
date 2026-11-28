@@ -13,6 +13,7 @@ from .mail_provider_client import (
     ThrottledError,
 )
 from .mail_message import READ_MIRROR_CTX
+from .pan_mail_sync_state import SYNC_STATE_FIELDS
 from .neutralization import database_is_copy
 
 _logger = logging.getLogger(__name__)
@@ -512,8 +513,14 @@ class PanMailMailbox(models.Model):
         default=fields.Datetime.now,
         help='Import emails starting from this date. Default is today.'
     )
+    # The three dates the sync writes live on `pan.mail.sync.state`, one row
+    # per mailbox, so the fetch cron never writes this row (#473). Read and
+    # written here as before; the sync itself goes through `_set_sync_state`.
+    sync_state_ids = fields.One2many('pan.mail.sync.state', 'mailbox_id',
+                                     string='Sync State')
     last_sync_date = fields.Datetime(
         string='Last synced',
+        compute='_compute_sync_state', inverse='_inverse_sync_state',
         readonly=True,
         help='Timestamp of last successful sync'
     )
@@ -525,6 +532,7 @@ class PanMailMailbox(models.Model):
     # the shared cursor left it.
     last_sent_sync_date = fields.Datetime(
         string='Sent folder synced',
+        compute='_compute_sync_state', inverse='_inverse_sync_state',
         readonly=True,
         help="Timestamp of the last message read from the Sent folder. Kept "
              "apart from 'Last synced' so a quiet folder cannot hold the "
@@ -539,12 +547,42 @@ class PanMailMailbox(models.Model):
     # and put two buttons there instead.
     last_check_date = fields.Datetime(
         string='Last checked',
+        compute='_compute_sync_state', inverse='_inverse_sync_state',
         readonly=True,
-        copy=False,
         help="When this mailbox last completed a sync run, whether or not "
              "there was anything to read. Kept apart from 'Last synced', "
              "which is the date of the newest message read."
     )
+
+    @api.depends(*(f'sync_state_ids.{name}' for name in SYNC_STATE_FIELDS))
+    def _compute_sync_state(self):
+        for record in self:
+            state = record.sudo().sync_state_ids[:1]
+            for name in SYNC_STATE_FIELDS:
+                record[name] = state[name] if state else False
+
+    def _inverse_sync_state(self):
+        for record in self:
+            record._set_sync_state({name: record[name] for name in SYNC_STATE_FIELDS})
+
+    def _set_sync_state(self, vals):
+        """Write the sync's own dates on the state row, never on the mailbox.
+
+        Only what changed is written, and the row is made on first use. The
+        sync calls this rather than `write()`: a write on the mailbox sets its
+        `write_date` even when every field in it is computed (#473).
+        """
+        self.ensure_one()
+        State = self.env['pan.mail.sync.state'].sudo()
+        state = State.search([('mailbox_id', '=', self.id)], limit=1)
+        if not state:
+            if any(vals.values()):
+                State.create(dict(vals, mailbox_id=self.id))
+            return
+        changed = {name: value for name, value in vals.items() if state[name] != value}
+        if changed:
+            state.write(changed)
+
     alias_id = fields.Many2one(
         'mail.alias',
         string='Routing',
@@ -890,12 +928,14 @@ class PanMailMailbox(models.Model):
             vals['error_message'] = False
         if self.sync_failure_count:
             vals['sync_failure_count'] = 0
-        # The heartbeat moves with any other change, and on its own only once
-        # it is IDLE_WRITE_EVERY_MINUTES old (#471): an idle mailbox is
-        # written once in five minutes rather than every minute.
-        if vals or idle_write_due(self.last_check_date):
-            vals['last_check_date'] = fields.Datetime.now()
+        # The rest only when it changed, which a healthy mailbox's run never
+        # does. The heartbeat moves with any such change, and on its own once
+        # it is IDLE_WRITE_EVERY_MINUTES old (#471), on the state row, not
+        # here (#473).
+        if vals:
             self.write(vals)
+        if vals or idle_write_due(self.last_check_date):
+            self._set_sync_state({'last_check_date': fields.Datetime.now()})
 
     # -------------------------------------------------------------------------
     # The mailbox page and its Sync page (the Mail Pro canvas, 04 to 09)
