@@ -479,6 +479,7 @@ shows (§2), and the account form's Test Connection reads the same two fields.
 |-------|---------|
 | `pan.mail.routing.log` | One row per delivered mail: rule, confidence, rejected candidates, and the run that read it |
 | `pan.mail.sync.run` | One pass of the sync over one mailbox (the fetch cron, Run Now, the access check): how much it read, linked, left out and failed. The mailbox's Sync page lists them as Runs; a run's mails are the routing log rows with its `run_id`. A day for an empty run, thirty for the rest |
+| `pan.mail.sync.state` | One row per mailbox: the two folder cursors and the heartbeat (`last_sync_date`, `last_sent_sync_date`, `last_check_date`). The fetch cron writes here and never on the mailbox row, which every upgrade alters (#473). The mailbox shows the three as computed fields with an inverse; the sync writes through `_set_sync_state`, because a `write()` on the mailbox sets its `write_date` even when only computed fields are in it |
 | `pan.mail.coverage` | Transient report: how much mail actually lands on a document |
 | `pan.mail.error` | One row per failure the module caught: a code from a fixed list, the flow, the mailbox, the exception and its traceback. Written on its own cursor so a rolled-back transaction keeps its row; thirty days. The codes of the last 24 hours ride the heartbeat (§7, §9.17) |
 
@@ -3549,7 +3550,10 @@ Two consequences, and what the module does about each:
   every mailbox every minute; the upgrade's own UPDATE on `pan_mail_mailbox`
   failed to serialize, rolled back, and Cloudpepper restarted on the new code
   anyway (Juffermans, 26-11, #471). An idle mailbox is written once in
-  `IDLE_WRITE_EVERY_MINUTES` now (§5 step 4, the heartbeat above).
+  `IDLE_WRITE_EVERY_MINUTES` now (§5 step 4, the heartbeat above), and since
+  19.0.43.0.0 not on the mailbox row at all: the cursors and the heartbeat
+  live on `pan.mail.sync.state`, so the cron writes that table and the
+  mailbox row is written by people only (#473).
 - *A column the code has and the database has not.* Until `-u` runs, every
   read of a model with a new stored field raises `UndefinedColumn`. Where the
   module reads first, it asks first and waits: `ir_http.missing_columns()`
@@ -3781,7 +3785,7 @@ eight groups:
 | Screens | `test_compose_crm_lead.py`, `test_compose_res_partner.py`, `test_compose_sale_order.py`, `test_compose_signature.py`, `test_mailbox_actions.py`, `test_mailbox_permission.py`, `test_mailbox_routing.py`, `test_mailbox_type.py`, `test_mailbox_heartbeat.py`, `test_setup_flow.py`, `test_onboarding.py`, `test_up_and_running.py`, `test_menus.py`, `test_field_labels.py`, `test_mail_lens.py`, `test_user_sync_level.py`, `test_sync_level_slider.py`, `test_connected_as.py` | The composer, the mailbox form and its rules, onboarding and its end, where the screens live, the one mailbox setting a user owns, and the slider that sets it, held to the gates |
 | The Inbox | `test_conversation_api.py`, `test_rpc_surface.py`, `test_read_state.py`, `test_drafts.py`, `test_linking.py`, `test_live_mailbox.py`, `test_inbox_panes.py`, `test_inbox_tour.py`, `test_dark_mode.py` | What the Inbox may show and to whom, every public method over RPC, read state, drafts, correcting a match, the live mailbox, the four pane names, the tour's row and its sentences, and that no colour lacks a dark side |
 | The outside | `test_oauth_routes.py`, `test_pantalytics_app.py`, `test_pantalytics_switch.py`, `test_connect_banner.py`, `test_license.py`, `test_inbox_gate.py`, `test_mail_limit.py`, `test_neutralized.py`, `test_copy.py`, `test_staging.py`, `test_hosting.py`, `test_errors.py`, `test_improve.py` | Every route this module opens and who may call it, signing in with Microsoft through the Pantalytics app and moving an own registration to it, the Pantalytics link and the Inbox's gate that connects it, the month's mails it counts and what it pauses over them, a copied database that must not talk to a provider and shows its outgoing mail in the host's catcher instead, and connects as staging of its production, where the Odoo runs and that an Odoo.sh staging branch is a copy, the error ledger, and what leaves for PostHog |
-| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py`, `test_cron_schema_behind.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
+| Migrations | `test_account_migration.py`, `test_rename_migration.py`, `test_provider_migration.py`, `test_sync_level_migration.py`, `test_session_schema_behind.py`, `test_cron_schema_behind.py`, `test_sync_state_migration.py` | The scripts in `migrations/`, run against real rows, and the page load between a pull and the `-u` |
 
 `tests/common.py` provides the shared fixture -- a notification mailbox, a
 shared mailbox, a personal mailbox, connected users, an external partner, and a

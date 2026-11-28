@@ -292,7 +292,9 @@ class PanMailFetcher(models.AbstractModel):
         # `last_check_date` moves too: the mailbox was read, it was only asked
         # to slow down, and a run that is throttled every minute must not
         # show the "not being read" warning on top of the wait.
-        mailbox.write({'error_message': str(error), 'last_check_date': fields.Datetime.now()})
+        if mailbox.error_message != str(error):
+            mailbox.write({'error_message': str(error)})
+        mailbox._set_sync_state({'last_check_date': fields.Datetime.now()})
         self.env['pan.mail.error']._record(
             'incoming.throttled', error, level='warning', mailbox=mailbox)
 
@@ -343,7 +345,7 @@ class PanMailFetcher(models.AbstractModel):
             if mailbox.sync_start_date:
                 # Historical sync: start from configured date
                 _logger.info(f"[Incoming Mail] First sync for {mailbox.email}, starting from {mailbox.sync_start_date}")
-                mailbox.write({'last_sync_date': mailbox.sync_start_date})
+                mailbox._set_sync_state({'last_sync_date': mailbox.sync_start_date})
                 # Continue to fetch messages below
             else:
                 # No start date: just test connection and start from now
@@ -356,7 +358,7 @@ class PanMailFetcher(models.AbstractModel):
                     limit=1,  # Just test, don't fetch all
                 )
                 _logger.info(f"[Incoming Mail] Connection test passed for {mailbox.email}, setting sync date to now")
-                mailbox.write({'last_sync_date': fields.Datetime.now()})
+                mailbox._set_sync_state({'last_sync_date': fields.Datetime.now()})
                 return  # Skip this run, start fetching from next cron run
 
         # One folder per direction, and each direction is its own answer. They
@@ -421,14 +423,15 @@ class PanMailFetcher(models.AbstractModel):
         """Store each folder's progress. A `None` holds that folder where it
         is, and so does a cursor that did not move: a provider whose `since`
         is inclusive hands the newest message back every run, and writing
-        the same date again is still a write on the mailbox row (#471)."""
+        the same date again is still a write (#471). On the state row, never the
+        mailbox's (#473)."""
         moved = {
             FOLDER_CURSOR_FIELDS[folder]: cursor
             for folder, cursor in cursors.items()
             if cursor and cursor != mailbox[FOLDER_CURSOR_FIELDS[folder]]
         }
         if moved:
-            mailbox.write(moved)
+            mailbox._set_sync_state(moved)
 
     @staticmethod
     def _stall_error(stalls):
