@@ -925,6 +925,11 @@ class TestPerFolderCursor(MailProTestCase):
         self.assertEqual(self.mailbox.last_sent_sync_date, sent)
         self.assertTrue(self.mailbox.last_check_date)
 
+    def test_a_new_mailbox_has_its_state_row_from_the_start(self):
+        """So two first runs at once never race to create it (#473)."""
+        mailbox = self.env['pan.mail.mailbox'].create({'email': 'new@company.test'})
+        self.assertEqual(len(mailbox.sync_state_ids), 1)
+
     def test_an_idle_run_inside_the_window_writes_no_mailbox(self):
         """#471: the cron wrote every mailbox every minute, and that write
         collided with Cloudpepper's `-u` (Juffermans, 26-11). A run with no

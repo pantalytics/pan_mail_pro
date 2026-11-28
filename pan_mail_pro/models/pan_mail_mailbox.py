@@ -1450,6 +1450,14 @@ class PanMailMailbox(models.Model):
         if any(vals.get('is_notification_mailbox') for vals in vals_list):
             self._hand_over_notifications()
         records = super().create(vals_list)
+        # Its sync state row from the start, so the sync only ever writes a
+        # row that exists: two first runs at once (the cron and Sync Now)
+        # would otherwise both create one and the second would fail on the
+        # unique constraint. A date given in `vals` already made its row.
+        State = self.env['pan.mail.sync.state'].sudo()
+        has_row = set(State.search([('mailbox_id', 'in', records.ids)]).mailbox_id.ids)
+        State.create([{'mailbox_id': record.id} for record in records
+                      if record.id not in has_row])
         if is_first:
             self._activate_smtp_takeover()
         return records
